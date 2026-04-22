@@ -28,7 +28,7 @@ router.post('/', requireAuth, async (req: AuthRequest, res: Response, next) => {
 // Chat for updating existing site
 router.post('/update/:siteId', requireAuth, async (req: AuthRequest, res: Response, next) => {
   try {
-    const { siteId } = req.params
+    const siteId = req.params.siteId as string
     const { history } = req.body
 
     if (!history || !Array.isArray(history) || history.length === 0)
@@ -63,7 +63,7 @@ router.post('/update/:siteId', requireAuth, async (req: AuthRequest, res: Respon
 // Revert to previous version
 router.post('/revert/:siteId', requireAuth, async (req: AuthRequest, res: Response, next) => {
   try {
-    const { siteId } = req.params
+    const siteId = req.params.siteId as string
     const site = await prisma.site.findUnique({ where: { id: siteId } })
     if (!site) throw new AppError(404, 'Site not found.')
     if (site.userId !== req.user!.userId) throw new AppError(403, 'Access denied.')

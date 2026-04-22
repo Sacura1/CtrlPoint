@@ -21,5 +21,5 @@ export function requireAuth(req: AuthRequest, res: Response, next: NextFunction)
 }
 
 export function signToken(payload: AuthPayload): string {
-  return jwt.sign(payload, cfg.jwtSecret, { expiresIn: cfg.jwtExpiresIn })
+  return jwt.sign(payload, cfg.jwtSecret, { expiresIn: cfg.jwtExpiresIn as any })
 }

@@ -14,7 +14,7 @@ const prisma = new PrismaClient()
 // Check if MNS name is available (used before deployment)
 router.get('/check-mns/:name', requireAuth, async (req: AuthRequest, res: Response, next) => {
   try {
-    const { name } = req.params
+    const name = req.params.name as string
     const available = await checkMnsAvailable(name)
     res.json({ available })
   } catch (err: any) {
@@ -106,7 +106,7 @@ router.post('/', requireAuth, async (req: AuthRequest, res: Response, next) => {
 // Poll deployment status
 router.get('/status/:deploymentId', requireAuth, async (req: AuthRequest, res: Response, next) => {
   try {
-    const { deploymentId } = req.params
+    const deploymentId = req.params.deploymentId as string
 
     // Check in-memory job first (fastest path)
     const job = getJob(deploymentId)
@@ -123,7 +123,7 @@ router.get('/status/:deploymentId', requireAuth, async (req: AuthRequest, res: R
 
     // Fall back to DB for completed/old jobs
     const deployment = await prisma.deployment.findUnique({
-      where: { id: deploymentId },
+      where: { id: deploymentId as string },
       include: { site: { select: { mnsName: true, userId: true } } },
     })
     if (!deployment) throw new AppError(404, 'Deployment not found.')

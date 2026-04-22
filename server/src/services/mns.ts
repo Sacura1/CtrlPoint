@@ -88,7 +88,7 @@ export async function getPlatformMasBalance(): Promise<bigint> {
   const provider = await getProvider()
   const account = await Account.fromPrivateKey(cfg.massaSecretKey)
   const balance = await provider.balanceOf([account.address.toString()])
-  return balance[0]?.finalBalance ?? BigInt(0)
+  return balance[0]?.balance ?? BigInt(0)
 }
 
 export { validateMnsName }

@@ -27,7 +27,7 @@ router.get('/', requireAuth, async (req: AuthRequest, res: Response, next) => {
 // Get one site (including code for editing)
 router.get('/:siteId', requireAuth, async (req: AuthRequest, res: Response, next) => {
   try {
-    const site = await prisma.site.findUnique({ where: { id: req.params.siteId } })
+    const site = await prisma.site.findUnique({ where: { id: req.params.siteId as string } })
     if (!site) throw new AppError(404, 'Site not found.')
     if (site.userId !== req.user!.userId) throw new AppError(403, 'Access denied.')
     res.json({ site })
@@ -69,13 +69,13 @@ router.post('/', requireAuth, async (req: AuthRequest, res: Response, next) => {
 // Delete a draft site (cannot delete live sites without warning)
 router.delete('/:siteId', requireAuth, async (req: AuthRequest, res: Response, next) => {
   try {
-    const site = await prisma.site.findUnique({ where: { id: req.params.siteId } })
+    const site = await prisma.site.findUnique({ where: { id: req.params.siteId as string } })
     if (!site) throw new AppError(404, 'Site not found.')
     if (site.userId !== req.user!.userId) throw new AppError(403, 'Access denied.')
     if (site.status === 'DEPLOYING' || site.status === 'UPDATING')
       throw new AppError(409, 'Cannot delete a site that is currently deploying.')
 
-    await prisma.site.delete({ where: { id: req.params.siteId } })
+    await prisma.site.delete({ where: { id: req.params.siteId as string } })
     res.json({ ok: true })
   } catch (err) { next(err) }
 })
@@ -83,7 +83,7 @@ router.delete('/:siteId', requireAuth, async (req: AuthRequest, res: Response, n
 // Transfer MNS ownership to user's wallet
 router.post('/:siteId/transfer-ownership', requireAuth, async (req: AuthRequest, res: Response, next) => {
   try {
-    const site = await prisma.site.findUnique({ where: { id: req.params.siteId } })
+    const site = await prisma.site.findUnique({ where: { id: req.params.siteId as string } })
     if (!site) throw new AppError(404, 'Site not found.')
     if (site.userId !== req.user!.userId) throw new AppError(403, 'Access denied.')
     if (site.status !== 'LIVE') throw new AppError(400, 'Site must be live before transferring ownership.')
