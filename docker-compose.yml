@@ -1,0 +1,12 @@
+version: '3.8'
+services:
+  server:
+    build: .
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=file:/app/data/ctrlpoint.db
+    env_file: .env
+    volumes:
+      - ./data:/app/data

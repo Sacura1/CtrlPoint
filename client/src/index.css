@@ -1,0 +1,192 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  *, *::before, *::after { box-sizing: border-box; margin: 0; }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    background: #05050d;
+    color: #f0f0ff;
+    min-height: 100dvh;
+    font-feature-settings: 'kern' 1, 'liga' 1;
+  }
+
+  ::selection {
+    background: rgba(124, 58, 237, 0.4);
+    color: #f0f0ff;
+  }
+
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(124,58,237,0.2); border-radius: 10px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(124,58,237,0.4); }
+
+  /* Subtle grain overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 9999;
+    opacity: 0.018;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='1'/%3E%3C/svg%3E");
+    background-size: 200px 200px;
+  }
+}
+
+@layer components {
+  /* ── Buttons ── */
+  .btn-primary {
+    @apply relative inline-flex items-center justify-center gap-2
+      text-white text-sm font-semibold
+      px-5 py-2.5 rounded-xl
+      transition-all duration-200
+      disabled:opacity-40 disabled:cursor-not-allowed
+      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 focus-visible:ring-offset-2 focus-visible:ring-offset-base-950
+      overflow-hidden;
+    background: linear-gradient(135deg, #7c3aed, #6d28d9);
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.1) inset, 0 4px 16px rgba(124,58,237,0.25);
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.15) inset, 0 4px 24px rgba(124,58,237,0.4);
+    transform: translateY(-1px);
+  }
+  .btn-primary:active:not(:disabled) {
+    transform: translateY(0);
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.1) inset, 0 2px 8px rgba(124,58,237,0.3);
+  }
+  .btn-primary::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent);
+    background-size: 200% 100%;
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+  .btn-primary:hover::after {
+    opacity: 1;
+    animation: shimmer 1.5s ease infinite;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2
+      text-ink-200 hover:text-ink-50 text-sm font-medium
+      px-5 py-2.5 rounded-xl
+      transition-all duration-200
+      disabled:opacity-40 disabled:cursor-not-allowed
+      focus-visible:outline-none;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    backdrop-filter: blur(12px);
+  }
+  .btn-secondary:hover:not(:disabled) {
+    background: rgba(255,255,255,0.07);
+    border-color: rgba(255,255,255,0.14);
+    transform: translateY(-1px);
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2
+      text-ink-400 hover:text-ink-50 text-sm font-medium
+      px-3 py-2 rounded-lg
+      transition-all duration-150;
+  }
+  .btn-ghost:hover {
+    background: rgba(255,255,255,0.05);
+  }
+
+  /* ── Inputs ── */
+  .input {
+    @apply w-full text-ink-50 placeholder-ink-600 text-sm
+      px-4 py-2.5 rounded-xl
+      outline-none
+      transition-all duration-200;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+  }
+  .input:hover {
+    background: rgba(255,255,255,0.06);
+    border-color: rgba(255,255,255,0.12);
+  }
+  .input:focus {
+    background: rgba(255,255,255,0.06);
+    border-color: rgba(124,58,237,0.5);
+    box-shadow: 0 0 0 3px rgba(124,58,237,0.12);
+  }
+
+  /* ── Cards ── */
+  .card {
+    border-radius: 16px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.07);
+    box-shadow: 0 1px 0 rgba(255,255,255,0.05) inset, 0 4px 24px rgba(0,0,0,0.5);
+    backdrop-filter: blur(20px);
+  }
+  .card-hover {
+    @apply transition-all duration-200;
+  }
+  .card-hover:hover {
+    background: rgba(255,255,255,0.05);
+    border-color: rgba(255,255,255,0.12);
+    box-shadow: 0 1px 0 rgba(255,255,255,0.07) inset, 0 8px 32px rgba(0,0,0,0.5), 0 0 0 1px rgba(124,58,237,0.1);
+    transform: translateY(-1px);
+  }
+
+  /* ── Glass panel ── */
+  .glass {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.07);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+  }
+  .glass-strong {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    backdrop-filter: blur(40px);
+    -webkit-backdrop-filter: blur(40px);
+  }
+
+  /* ── Skeleton ── */
+  .skeleton {
+    border-radius: 12px;
+    background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.06) 50%, rgba(255,255,255,0.03) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.8s linear infinite;
+  }
+
+  /* ── Badge ── */
+  .badge {
+    @apply inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full;
+  }
+}
+
+@layer utilities {
+  .text-gradient {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(135deg, #ffffff 0%, #c4b5fd 45%, #8b5cf6 100%);
+  }
+
+  .glow-border {
+    box-shadow: 0 0 0 1px rgba(124,58,237,0.4), 0 0 24px rgba(124,58,237,0.12);
+  }
+
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+  .shimmer-text {
+    background: linear-gradient(90deg, #8888aa 0%, #f0f0ff 50%, #8888aa 100%);
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: shimmer 2s linear infinite;
+  }
+}

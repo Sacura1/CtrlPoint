@@ -1,0 +1,44 @@
+node_modules/
+dist/
+.env
+*.db
+*.db-journal
+data/
+client/dist/
+server/dist/
+.DS_Store
+*.log
+hh.html
+# ENV files
+.env
+*.env
+server/.env
+client/.env
+
+# Node modules
+node_modules/
+server/node_modules/
+client/node_modules/
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Build folders
+dist/
+build/
+server/dist/
+client/build/
+
+# OS / editor stuff
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.db
+
+# Optional: coverage
+coverage/

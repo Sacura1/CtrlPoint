@@ -1,0 +1,35 @@
+app = "ctrlpoint"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "3001"
+  NODE_ENV = "production"
+
+[http_service]
+  internal_port = 3001
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "connections"
+    hard_limit = 200
+    soft_limit = 150
+
+[[vm]]
+  memory = "1gb"
+  cpu_kind = "shared"
+  cpus = 1
+
+# Persistent volume for SQLite database
+[mounts]
+  source = "ctrlpoint_data"
+  destination = "/app/data"
+
+[[statics]]
+  guest_path = "/app/client/dist"
+  url_prefix = "/"
