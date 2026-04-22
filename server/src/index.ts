@@ -1,4 +1,5 @@
-import 'dotenv/config'
+import dotenv from 'dotenv'
+dotenv.config({ override: false }) // never override env vars already set by the host
 import express from 'express'
 import cookieParser from 'cookie-parser'
 import cors from 'cors'
