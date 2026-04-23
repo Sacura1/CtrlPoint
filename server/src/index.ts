@@ -16,7 +16,17 @@ validateConfig()
 
 const app = express()
 
-app.use(cors({ origin: cfg.clientUrl, credentials: true }))
+const allowedOriginSet = new Set(cfg.allowedOrigins.map(origin => origin.replace(/\/+$/, '')))
+
+app.use(cors({
+  credentials: true,
+  origin(origin, callback) {
+    if (!origin) return callback(null, true)
+    const normalizedOrigin = origin.replace(/\/+$/, '')
+    if (allowedOriginSet.has(normalizedOrigin)) return callback(null, true)
+    return callback(new Error(`Origin ${origin} not allowed by CORS`))
+  },
+}))
 app.use((_, res, next) => {
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups')
   next()

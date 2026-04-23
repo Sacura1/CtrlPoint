@@ -1,3 +1,23 @@
+function normalizeOrigin(origin: string): string {
+  return origin.replace(/\/+$/, '').trim()
+}
+
+function parseOrigins(raw: string | undefined, fallback: string[]): string[] {
+  if (!raw) return fallback
+  const parsed = raw
+    .split(',')
+    .map(normalizeOrigin)
+    .filter(Boolean)
+  return parsed.length > 0 ? parsed : fallback
+}
+
+const defaultClientOrigins =
+  process.env.NODE_ENV === 'production'
+    ? ['https://www.ctrlpoint.dev', 'https://ctrlpoint.dev']
+    : ['http://localhost:5173']
+
+const allowedOrigins = parseOrigins(process.env.CLIENT_URLS || process.env.CLIENT_URL, defaultClientOrigins)
+
 export const cfg = {
   port: parseInt(process.env.PORT || '3001'),
   jwtSecret: process.env.JWT_SECRET || 'dev-secret-change-in-prod',
@@ -19,7 +39,8 @@ export const cfg = {
   stripeSecretKey: process.env.STRIPE_SECRET_KEY || '',
   stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET || '',
 
-  clientUrl: process.env.CLIENT_URL || 'http://localhost:5173',
+  clientUrl: allowedOrigins[0],
+  allowedOrigins,
   nodeEnv: process.env.NODE_ENV || 'development',
 
   // Credits cost per action
