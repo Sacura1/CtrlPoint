@@ -20,10 +20,11 @@ function isValidMassaAddress(address: string): boolean {
 }
 
 function setCookie(res: Response, token: string) {
+  const isProduction = cfg.nodeEnv === 'production'
   res.cookie('token', token, {
     httpOnly: true,
-    sameSite: 'lax',
-    secure: cfg.nodeEnv === 'production',
+    sameSite: isProduction ? 'none' : 'lax',
+    secure: isProduction,
     maxAge: 7 * 24 * 60 * 60 * 1000,
   })
 }
@@ -126,7 +127,12 @@ router.post('/login', async (req: Request, res: Response, next) => {
 })
 
 router.post('/logout', (req: Request, res: Response) => {
-  res.clearCookie('token')
+  const isProduction = cfg.nodeEnv === 'production'
+  res.clearCookie('token', {
+    httpOnly: true,
+    sameSite: isProduction ? 'none' : 'lax',
+    secure: isProduction,
+  })
   res.json({ ok: true })
 })
 
