@@ -19,7 +19,7 @@ const defaultClientOrigins =
 const allowedOrigins = parseOrigins(process.env.CLIENT_URLS || process.env.CLIENT_URL, defaultClientOrigins)
 
 export const cfg = {
-  port: parseInt(process.env.PORT || '3001'),
+  port: parseInt(process.env.PORT || (process.env.NODE_ENV === 'production' ? '8000' : '3001')),
   jwtSecret: process.env.JWT_SECRET || 'dev-secret-change-in-prod',
   jwtExpiresIn: '7d',
 
