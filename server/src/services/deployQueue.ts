@@ -2,6 +2,7 @@ import { DeployJob, DeploymentStatus } from '../types'
 import { PrismaClient } from '@prisma/client'
 import { uploadSite } from './massa'
 import { registerMns } from './mns'
+import { cfg } from '../config'
 
 const prisma = new PrismaClient()
 
@@ -98,7 +99,7 @@ async function runDeploy(
       log(id, `MNS registration complete`)
     }
 
-    log(id, `Deployment COMPLETE — https://${params.mnsName}.massa.network`)
+    log(id, `Deployment COMPLETE — https://${params.mnsName}.${cfg.mnsPublicDomain}`)
     updateJob(job.id, { status: 'COMPLETE', step: 'Live!' })
     await updateDeploymentDb(id, 'COMPLETE', { scAddress })
     await prisma.site.update({

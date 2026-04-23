@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { deploy as deployApi, sites as sitesApi } from '../api'
 import { DeployStatus, Site } from '../types'
 import { useAuth } from '../store/auth'
+import { mnsPublicDomain } from '../utils/siteUrl'
 
 interface Props {
   generatedCode: string
@@ -161,14 +162,14 @@ export default function DeployModal({ generatedCode, title, description, lastPro
                   </div>
                   {mnsName && (
                     <p className="text-xs mt-2 font-mono" style={{ color: 'rgba(255,255,255,0.2)' }}>
-                      → {mnsName}.massa.network
+                      → {mnsName}.{mnsPublicDomain}
                     </p>
                   )}
                 </div>
               ) : (
                 <div className="rounded-xl px-4 py-3" style={{ background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.15)' }}>
                   <p className="text-sm text-ink-200">
-                    Updating <span className="text-brand-400 font-mono">{existingSite.mnsName}.massa.network</span>
+                    Updating <span className="text-brand-400 font-mono">{existingSite.mnsName}.{mnsPublicDomain}</span>
                   </p>
                   <p className="text-xs mt-0.5" style={{ color: 'rgba(255,255,255,0.25)' }}>URL stays the same — content updates in place.</p>
                 </div>

@@ -4,6 +4,7 @@ import Header from '../components/Header'
 import { auth as authApi, sites as sitesApi, billing as billingApi } from '../api'
 import { useAuth } from '../store/auth'
 import { Site } from '../types'
+import { mnsPublicDomain } from '../utils/siteUrl'
 
 interface Transaction {
   id: string
@@ -190,7 +191,7 @@ export default function Settings() {
                     <div className="min-w-0">
                       <p className="text-sm font-semibold text-ink-100 truncate">{site.title}</p>
                       <p className="text-xs font-mono mt-0.5" style={{ color: 'rgba(255,255,255,0.3)' }}>
-                        {site.mnsName}.massa.network
+                        {site.mnsName}.{mnsPublicDomain}
                       </p>
                       {site.scAddress && (
                         <p className="text-xs font-mono mt-0.5 truncate" style={{ color: 'rgba(255,255,255,0.15)' }}>

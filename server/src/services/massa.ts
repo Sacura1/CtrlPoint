@@ -15,7 +15,7 @@ function runDewebCli(args: string[], env: NodeJS.ProcessEnv): Promise<string> {
   return new Promise((resolve, reject) => {
     console.log(`[deweb-cli] node ${DEWEB_CLI} ${args.join(' ')}`)
 
-    const proc = spawn('node', [DEWEB_CLI, ...args], {
+    const proc = spawn('node', [DEWEB_CLI, '--accept_disclaimer', ...args], {
       env: { ...process.env, ...env },
       timeout: 600_000, // 10 min max
     })

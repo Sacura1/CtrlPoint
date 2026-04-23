@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import Header from '../components/Header'
 import { sites as sitesApi } from '../api'
 import { Site } from '../types'
+import { getSiteUrl, mnsPublicDomain } from '../utils/siteUrl'
 
 const STATUS = {
   DRAFT:     { label: 'Draft',      color: 'rgba(74,74,106,0.6)',  dot: '#4a4a6a',  glow: 'none' },
@@ -100,13 +101,13 @@ export default function Dashboard() {
                         {s.label}
                       </span>
                     </div>
-                    <span className="text-ink-600 text-xs font-mono">{site.mnsName}.massa.network</span>
+                    <span className="text-ink-600 text-xs font-mono">{site.mnsName}.{mnsPublicDomain}</span>
                   </div>
 
                   {/* Actions — appear on hover */}
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all duration-200 flex-shrink-0">
                     {site.status === 'LIVE' && (
-                      <a href={`https://${site.mnsName}.massa.network`} target="_blank" rel="noopener noreferrer"
+                      <a href={getSiteUrl(site.mnsName)} target="_blank" rel="noopener noreferrer"
                         onClick={e => e.stopPropagation()}
                         className="btn-ghost py-1 px-2.5 text-xs text-ink-400 hover:text-brand-400" title="Visit">
                         ↗

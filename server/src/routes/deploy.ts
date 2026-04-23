@@ -10,6 +10,7 @@ import { cfg } from '../config'
 
 const router = Router()
 const prisma = new PrismaClient()
+const mnsUrl = (name: string) => `https://${name}.${cfg.mnsPublicDomain}`
 
 // Check if MNS name is available (used before deployment)
 router.get('/check-mns/:name', requireAuth, async (req: AuthRequest, res: Response, next) => {
@@ -117,7 +118,7 @@ router.get('/status/:deploymentId', requireAuth, async (req: AuthRequest, res: R
         step: job.step,
         scAddress: job.scAddress,
         error: job.error,
-        url: job.status === 'COMPLETE' ? `https://${site?.mnsName}.massa.network` : null,
+        url: job.status === 'COMPLETE' && site?.mnsName ? mnsUrl(site.mnsName) : null,
       })
     }
 
@@ -134,7 +135,7 @@ router.get('/status/:deploymentId', requireAuth, async (req: AuthRequest, res: R
       step: deployment.status,
       scAddress: deployment.scAddress,
       error: deployment.errorMsg,
-      url: deployment.status === 'COMPLETE' ? `https://${deployment.site.mnsName}.massa.network` : null,
+      url: deployment.status === 'COMPLETE' ? mnsUrl(deployment.site.mnsName) : null,
     })
   } catch (err) { next(err) }
 })

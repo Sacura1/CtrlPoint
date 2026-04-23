@@ -2,6 +2,13 @@ function normalizeOrigin(origin: string): string {
   return origin.replace(/\/+$/, '').trim()
 }
 
+function normalizeHost(value: string): string {
+  return value
+    .trim()
+    .replace(/^https?:\/\//, '')
+    .replace(/\/.*$/, '')
+}
+
 function parseOrigins(raw: string | undefined, fallback: string[]): string[] {
   if (!raw) return fallback
   const parsed = raw
@@ -17,6 +24,7 @@ const defaultClientOrigins =
     : ['http://localhost:5173']
 
 const allowedOrigins = parseOrigins(process.env.CLIENT_URLS || process.env.CLIENT_URL, defaultClientOrigins)
+const mnsPublicDomain = normalizeHost(process.env.MNS_PUBLIC_DOMAIN || 'massahub.network')
 
 export const cfg = {
   port: parseInt(process.env.PORT || (process.env.NODE_ENV === 'production' ? '8000' : '3001')),
@@ -41,6 +49,7 @@ export const cfg = {
 
   clientUrl: allowedOrigins[0],
   allowedOrigins,
+  mnsPublicDomain: mnsPublicDomain || 'massahub.network',
   nodeEnv: process.env.NODE_ENV || 'development',
 
   // Credits cost per action

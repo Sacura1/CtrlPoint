@@ -5,6 +5,7 @@ import Preview from '../components/Preview'
 import DeployModal from '../components/DeployModal'
 import { generate as genApi, sites as sitesApi } from '../api'
 import { Site } from '../types'
+import { getSiteUrl, mnsPublicDomain } from '../utils/siteUrl'
 
 interface Message { role: 'user' | 'assistant'; content: string }
 type MobileTab = 'chat' | 'preview'
@@ -105,6 +106,7 @@ export default function Editor() {
 
   const isLive = site?.status === 'LIVE'
   const isBusy = site?.status === 'DEPLOYING' || site?.status === 'UPDATING'
+  const liveSiteUrl = site ? getSiteUrl(site.mnsName) : ''
 
   return (
     <div className="flex flex-col h-dvh overflow-hidden" style={{ background: '#05050d' }}>
@@ -119,10 +121,10 @@ export default function Editor() {
         {isLive && (
           <>
             <div className="h-3.5 w-px hidden sm:block" style={{ background: 'rgba(255,255,255,0.08)' }} />
-            <a href={`https://${site?.mnsName}.massa.network`} target="_blank" rel="noopener noreferrer"
+            <a href={liveSiteUrl} target="_blank" rel="noopener noreferrer"
               className="text-xs font-mono transition-colors hidden sm:block hover:text-brand-300"
               style={{ color: 'rgba(52,211,153,0.8)' }}>
-              {site?.mnsName}.massa.network ↗
+              {site?.mnsName}.{mnsPublicDomain} ↗
             </a>
           </>
         )}
