@@ -36,11 +36,11 @@ export default function Landing() {
       {/* Hero */}
       <main className="relative z-10 flex-1 flex flex-col items-center justify-center text-center px-6 pt-12 pb-24 sm:pt-20">
 
-        <div className="inline-flex items-center gap-2 mb-8 px-4 py-1.5 rounded-full text-xs font-medium animate-fade-in"
+        {/* <div className="inline-flex items-center gap-2 mb-8 px-4 py-1.5 rounded-full text-xs font-medium animate-fade-in"
           style={{ background: 'rgba(124,58,237,0.12)', border: '1px solid rgba(124,58,237,0.25)', color: '#a78bfa' }}>
           <span className="w-1.5 h-1.5 rounded-full bg-brand-400 animate-pulse-dot" />
           Deployed on Massa DeWeb · Mainnet
-        </div>
+        </div> */}
 
         <h1 className="text-5xl sm:text-7xl lg:text-8xl font-black tracking-tight leading-[0.95] mb-6 animate-slide-up"
             style={{ animationDelay: '0.05s' }}>
