@@ -15,8 +15,22 @@ export interface Site {
   createdAt: string
   updatedAt: string
   lastPrompt: string | null
+  needsDeploy: boolean
   generatedCode?: string
   previousCode?: string | null
+}
+
+export interface SiteDeployment {
+  id: string
+  type: string
+  status: string
+  source: string
+  commitSha: string | null
+  step: string | null
+  errorMsg: string | null
+  scAddress: string | null
+  createdAt: string
+  updatedAt: string
 }
 
 export interface DeployStatus {

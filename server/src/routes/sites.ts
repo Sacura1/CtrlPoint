@@ -17,7 +17,7 @@ router.get('/', requireAuth, async (req: AuthRequest, res: Response, next) => {
       select: {
         id: true, mnsName: true, scAddress: true, status: true,
         title: true, description: true, createdAt: true, updatedAt: true,
-        lastPrompt: true,
+        lastPrompt: true, needsDeploy: true,
       },
     })
     res.json({ sites })
@@ -77,6 +77,23 @@ router.delete('/:siteId', requireAuth, async (req: AuthRequest, res: Response, n
 
     await prisma.site.delete({ where: { id: req.params.siteId as string } })
     res.json({ ok: true })
+  } catch (err) { next(err) }
+})
+
+// Get deployment activity for a site
+router.get('/:siteId/deployments', requireAuth, async (req: AuthRequest, res: Response, next) => {
+  try {
+    const site = await prisma.site.findUnique({ where: { id: req.params.siteId as string } })
+    if (!site) throw new AppError(404, 'Site not found.')
+    if (site.userId !== req.user!.userId) throw new AppError(403, 'Access denied.')
+
+    const deployments = await prisma.deployment.findMany({
+      where: { siteId: req.params.siteId as string },
+      orderBy: { createdAt: 'desc' },
+      take: 30,
+      select: { id: true, type: true, status: true, source: true, commitSha: true, step: true, errorMsg: true, scAddress: true, createdAt: true, updatedAt: true },
+    })
+    res.json({ deployments })
   } catch (err) { next(err) }
 })
 

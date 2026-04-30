@@ -63,6 +63,34 @@ function parseScAddress(output: string): string {
   return match[0]
 }
 
+export async function uploadDirectory(
+  dirPath: string,
+  title: string,
+  description: string,
+  existingScAddress?: string,
+  onProgress?: (step: string) => void
+): Promise<UploadResult> {
+  // Write metadata config into the directory
+  const config = {
+    node_url: NODE_URL,
+    chunk_size: 64000,
+    metadata: {
+      title: title.slice(0, 50),
+      description: description.slice(0, 250),
+      keywords: ['ctrlpoint', 'deweb'],
+    },
+  }
+  await fs.writeFile(path.join(dirPath, 'website.json'), JSON.stringify(config), 'utf-8')
+
+  onProgress?.('Uploading to Massa chain...')
+
+  const args = ['upload', dirPath, '--node_url', NODE_URL, '--yes']
+  if (existingScAddress) args.push('--address', existingScAddress)
+
+  const output = await runDewebCli(args, { SECRET_KEY: cfg.massaSecretKey })
+  return { scAddress: parseScAddress(output) }
+}
+
 export async function uploadSite(
   html: string,
   title: string,

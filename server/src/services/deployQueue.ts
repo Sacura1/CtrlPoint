@@ -18,7 +18,7 @@ function updateJob(id: string, update: Partial<DeployJob>) {
   if (job) jobs.set(id, { ...job, ...update })
 }
 
-async function updateDeploymentDb(id: string, status: DeploymentStatus, data?: { scAddress?: string; errorMsg?: string }) {
+async function updateDeploymentDb(id: string, status: DeploymentStatus, data?: { scAddress?: string; errorMsg?: string; step?: string }) {
   await prisma.deployment.update({
     where: { id },
     data: { status, ...data, updatedAt: new Date() },
@@ -71,7 +71,7 @@ async function runDeploy(
     // Upload site to Massa chain
     log(id, 'Uploading HTML to Massa chain...')
     updateJob(job.id, { status: 'UPLOADING', step: 'Uploading to Massa chain...' })
-    await updateDeploymentDb(id, 'UPLOADING')
+    await updateDeploymentDb(id, 'UPLOADING', { step: 'Uploading to Massa chain...' })
 
     const { scAddress } = await uploadSite(
       params.html,
@@ -90,7 +90,7 @@ async function runDeploy(
     if (!params.isUpdate) {
       log(id, `Registering MNS name "${params.mnsName}"...`)
       updateJob(job.id, { status: 'MNS_REGISTERING', step: 'Registering domain...' })
-      await updateDeploymentDb(id, 'MNS_REGISTERING')
+      await updateDeploymentDb(id, 'MNS_REGISTERING', { step: 'Registering domain...' })
 
       await registerMns(params.mnsName, scAddress, undefined, (step) => {
         log(id, step)
@@ -101,19 +101,19 @@ async function runDeploy(
 
     log(id, `Deployment COMPLETE — https://${params.mnsName}.${cfg.mnsPublicDomain}`)
     updateJob(job.id, { status: 'COMPLETE', step: 'Live!' })
-    await updateDeploymentDb(id, 'COMPLETE', { scAddress })
+    await updateDeploymentDb(id, 'COMPLETE', { scAddress, step: 'Live!' })
     await prisma.site.update({
       where: { id: params.siteId },
-      data: { status: 'LIVE', scAddress, updatedAt: new Date() },
+      data: { status: 'LIVE', scAddress, needsDeploy: false, updatedAt: new Date() },
     })
   } catch (err: any) {
     const errorMsg = err?.message || 'Unknown error'
     log(id, `FAILED: ${errorMsg}`)
     updateJob(job.id, { status: 'FAILED', step: 'Failed', error: errorMsg })
-    await updateDeploymentDb(id, 'FAILED', { errorMsg })
+    await updateDeploymentDb(id, 'FAILED', { errorMsg, step: 'Failed' }).catch(() => {})
     await prisma.site.update({
       where: { id: params.siteId },
       data: { status: 'ERROR' },
-    })
+    }).catch(() => {})
   }
 }

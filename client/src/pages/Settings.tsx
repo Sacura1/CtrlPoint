@@ -6,6 +6,15 @@ import { useAuth } from '../store/auth'
 import { Site } from '../types'
 import { mnsPublicDomain } from '../utils/siteUrl'
 
+const MODEL_SELECTION_ENABLED = import.meta.env.VITE_ENABLE_MODEL_SELECTION === 'true'
+
+const MODELS = [
+  { id: 'claude-sonnet-4-6', label: 'Claude Sonnet', sub: 'Fast & capable',    provider: 'Anthropic' },
+  { id: 'claude-opus-4-7',   label: 'Claude Opus',   sub: 'Most powerful',     provider: 'Anthropic' },
+  { id: 'gpt-5.4-mini',      label: 'GPT-5.4 mini',  sub: 'Fast & affordable', provider: 'OpenAI'    },
+  { id: 'gpt-5.5',           label: 'GPT-5.5',        sub: 'Flagship reasoning', provider: 'OpenAI'  },
+] as const
+
 interface Transaction {
   id: string
   amount: number
@@ -30,9 +39,14 @@ export default function Settings() {
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [claiming, setClaiming] = useState<string | null>(null)
   const [claimMsg, setClaimMsg] = useState<{ siteId: string; ok: boolean; text: string } | null>(null)
+  const [selectedModel, setSelectedModel] = useState<string>(
+    () => localStorage.getItem('ctrlpoint_model') || 'gpt-5.4-mini'
+  )
 
   useEffect(() => {
-    sitesApi.list().then(({ sites }) => setSites(sites.filter(s => s.status === 'LIVE')))
+    sitesApi.list().then(({ sites }) => {
+      setSites(sites.filter(s => s.status === 'LIVE'))
+    })
     billingApi.history().then(({ transactions }) => setTransactions(transactions))
   }, [])
 
@@ -109,7 +123,7 @@ export default function Settings() {
           {/* Massa address */}
           <div className="px-5 py-4" style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
             <div className="flex items-center justify-between mb-1.5">
-              <p className="text-xs font-medium" style={{ color: 'rgba(255,255,255,0.3)' }}>MASSA WALLET</p>
+              <p className="text-xs font-medium" style={{ color: '#8888aa' }}>MASSA WALLET</p>
               {!user?.massaAddress && (
                 <button onClick={generateWallet} disabled={generatingWallet}
                   className="text-xs font-medium transition-colors"
@@ -120,7 +134,7 @@ export default function Settings() {
                 </button>
               )}
             </div>
-            <p className="text-xs mb-3" style={{ color: 'rgba(255,255,255,0.2)' }}>
+            <p className="text-xs mb-3" style={{ color: '#8888aa' }}>
               Required to claim on-chain ownership. Starts with <span className="font-mono">AS</span>.
             </p>
             <div className="flex gap-2">
@@ -141,6 +155,57 @@ export default function Settings() {
           </div>
         </Section>
 
+        {/* AI Model */}
+        <Section title="AI Model">
+          <div className="px-5 py-4">
+            <div className="flex items-center gap-2 mb-3">
+              <p className="text-xs" style={{ color: '#8888aa' }}>
+                Choose which model generates and edits your sites.
+              </p>
+              {!MODEL_SELECTION_ENABLED && (
+                <span className="text-xs px-2 py-0.5 rounded-full flex-shrink-0 font-medium"
+                  style={{ background: 'rgba(124,58,237,0.1)', border: '1px solid rgba(124,58,237,0.2)', color: '#a78bfa' }}>
+                  Coming soon
+                </span>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {MODELS.map(m => {
+                const isSelected = selectedModel === m.id
+                const disabled = !MODEL_SELECTION_ENABLED
+                return (
+                  <button
+                    key={m.id}
+                    disabled={disabled}
+                    onClick={() => {
+                      setSelectedModel(m.id)
+                      localStorage.setItem('ctrlpoint_model', m.id)
+                    }}
+                    className="flex flex-col items-start px-3.5 py-3 rounded-xl text-left transition-all duration-200"
+                    style={{
+                      opacity: disabled ? 0.4 : 1,
+                      cursor: disabled ? 'not-allowed' : 'pointer',
+                      background: isSelected && !disabled
+                        ? 'rgba(124,58,237,0.15)'
+                        : 'rgba(255,255,255,0.03)',
+                      border: isSelected && !disabled
+                        ? '1px solid rgba(124,58,237,0.4)'
+                        : '1px solid rgba(255,255,255,0.07)',
+                    }}
+                  >
+                    <span className="text-xs font-semibold text-ink-100">{m.label}</span>
+                    <span className="text-xs mt-0.5" style={{ color: '#8888aa' }}>{m.sub}</span>
+                    <span className="text-xs mt-1.5 px-1.5 py-0.5 rounded font-medium"
+                      style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.2)' }}>
+                      {m.provider}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </Section>
+
         {/* Credits */}
         <Section title="Credits">
           <div className="px-5 py-4 flex items-center justify-between">
@@ -154,13 +219,13 @@ export default function Settings() {
 
           {transactions.length > 0 && (
             <div className="px-5 py-4" style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-              <p className="text-xs font-medium mb-3" style={{ color: 'rgba(255,255,255,0.25)' }}>HISTORY</p>
+              <p className="text-xs font-medium mb-3" style={{ color: '#8888aa' }}>HISTORY</p>
               <div className="space-y-2.5">
                 {transactions.slice(0, 20).map((tx) => (
                   <div key={tx.id} className="flex items-center justify-between text-sm">
                     <span className="text-ink-400 text-xs">{tx.note || tx.type}</span>
                     <div className="flex items-center gap-3">
-                      <span className="text-xs tabular-nums" style={{ color: 'rgba(255,255,255,0.2)' }}>
+                      <span className="text-xs tabular-nums" style={{ color: '#8888aa' }}>
                         {new Date(tx.createdAt).toLocaleDateString()}
                       </span>
                       <span className={`font-mono font-semibold text-xs tabular-nums ${tx.amount > 0 ? 'text-emerald-400' : 'text-ink-600'}`}>
@@ -178,7 +243,7 @@ export default function Settings() {
         {sites.length > 0 && (
           <Section title="On-chain Ownership">
             <div className="px-5 pb-1 pt-2">
-              <p className="text-xs mb-4" style={{ color: 'rgba(255,255,255,0.25)' }}>
+              <p className="text-xs mb-4" style={{ color: '#8888aa' }}>
                 Sites are owned by the CtrlPoint platform wallet. Claim ownership to transfer the MNS domain to your personal address.
               </p>
             </div>
@@ -190,7 +255,7 @@ export default function Settings() {
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0">
                       <p className="text-sm font-semibold text-ink-100 truncate">{site.title}</p>
-                      <p className="text-xs font-mono mt-0.5" style={{ color: 'rgba(255,255,255,0.3)' }}>
+                      <p className="text-xs font-mono mt-0.5" style={{ color: '#8888aa' }}>
                         {site.mnsName}.{mnsPublicDomain}
                       </p>
                       {site.scAddress && (
@@ -222,7 +287,7 @@ export default function Settings() {
           <div className="px-5 py-4 flex items-center justify-between">
             <div>
               <p className="text-sm text-ink-200">Sign out</p>
-              <p className="text-xs mt-0.5" style={{ color: 'rgba(255,255,255,0.2)' }}>
+              <p className="text-xs mt-0.5" style={{ color: '#8888aa' }}>
                 {user?.email}
               </p>
             </div>
@@ -257,7 +322,7 @@ export default function Settings() {
                 </div>
                 <div>
                   <h3 className="font-bold text-ink-50">Wallet created</h3>
-                  <p className="text-xs" style={{ color: 'rgba(255,255,255,0.3)' }}>Save your private key — shown once only</p>
+                  <p className="text-xs" style={{ color: '#8888aa' }}>Save your private key — shown once only</p>
                 </div>
               </div>
             </div>
@@ -274,7 +339,7 @@ export default function Settings() {
 
               {/* Address */}
               <div>
-                <p className="text-xs mb-2 font-medium" style={{ color: 'rgba(255,255,255,0.3)' }}>PUBLIC ADDRESS</p>
+                <p className="text-xs mb-2 font-medium" style={{ color: '#8888aa' }}>PUBLIC ADDRESS</p>
                 <div className="px-3.5 py-2.5 rounded-xl font-mono text-xs text-ink-200 break-all select-all"
                   style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
                   {newWallet.address}
@@ -283,7 +348,7 @@ export default function Settings() {
 
               {/* Private key */}
               <div>
-                <p className="text-xs mb-2 font-medium" style={{ color: 'rgba(255,255,255,0.3)' }}>PRIVATE KEY</p>
+                <p className="text-xs mb-2 font-medium" style={{ color: '#8888aa' }}>PRIVATE KEY</p>
                 <div className="relative">
                   <div className="px-3.5 py-2.5 pr-20 rounded-xl font-mono text-xs text-ink-200 break-all select-all"
                     style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
@@ -315,7 +380,7 @@ export default function Settings() {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="animate-slide-up">
-      <p className="text-xs font-semibold mb-3 uppercase tracking-widest" style={{ color: 'rgba(255,255,255,0.2)' }}>
+      <p className="text-xs font-semibold mb-3 uppercase tracking-widest" style={{ color: '#8888aa' }}>
         {title}
       </p>
       <div className="rounded-2xl overflow-hidden"
@@ -329,7 +394,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function Row({ label, value }: { label: string; value?: string | null }) {
   return (
     <div className="px-5 py-4 flex items-center justify-between gap-4">
-      <p className="text-xs font-medium" style={{ color: 'rgba(255,255,255,0.3)' }}>{label.toUpperCase()}</p>
+      <p className="text-xs font-medium" style={{ color: '#8888aa' }}>{label.toUpperCase()}</p>
       <p className="text-sm text-ink-300 truncate">{value || '—'}</p>
     </div>
   )

@@ -35,8 +35,21 @@ router.post('/', requireAuth, async (req: AuthRequest, res: Response, next) => {
     const site = await prisma.site.findUnique({ where: { id: siteId } })
     if (!site) throw new AppError(404, 'Site not found.')
     if (site.userId !== req.user!.userId) throw new AppError(403, 'Access denied.')
-    if (site.status === 'DEPLOYING' || site.status === 'UPDATING')
-      throw new AppError(409, 'A deployment is already running for this site.')
+    if (site.status === 'DEPLOYING' || site.status === 'UPDATING') {
+      // Check if a real active job exists in memory — if not, the deployment is stuck
+      const activeDeployment = await prisma.deployment.findFirst({
+        where: { siteId, status: { in: ['QUEUED', 'UPLOADING', 'MNS_REGISTERING'] } },
+        orderBy: { createdAt: 'desc' },
+      })
+      const isStuck = !activeDeployment ||
+        (new Date().getTime() - new Date(activeDeployment.updatedAt).getTime()) > 10 * 60 * 1000
+
+      if (!isStuck) throw new AppError(409, 'A deployment is already running for this site.')
+
+      // Reset stuck deployment so user can retry
+      await prisma.site.update({ where: { id: siteId }, data: { status: site.scAddress ? 'LIVE' : 'ERROR' } })
+      if (activeDeployment) await prisma.deployment.update({ where: { id: activeDeployment.id }, data: { status: 'FAILED', step: 'Failed — timed out', errorMsg: 'Deployment timed out or was interrupted.' } })
+    }
     if (!site.generatedCode) throw new AppError(400, 'Site has no generated code. Generate a site first.')
 
     // Check credits
@@ -82,6 +95,8 @@ router.post('/', requireAuth, async (req: AuthRequest, res: Response, next) => {
         siteId,
         type: isUpdate ? 'UPDATE' : 'INITIAL',
         status: 'QUEUED',
+        source: site.lastPrompt ? 'agent' : 'upload',
+        step: 'Queued',
       },
     })
 

@@ -6,6 +6,10 @@ import Auth from './pages/Auth'
 import Dashboard from './pages/Dashboard'
 import Editor from './pages/Editor'
 import Settings from './pages/Settings'
+import Deploy from './pages/Deploy'
+import Keys from './pages/Keys'
+import Deployments from './pages/Deployments'
+import GitHub from './pages/GitHub'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth()
@@ -36,6 +40,10 @@ export default function App() {
       <Route path="/editor" element={<PrivateRoute><Editor /></PrivateRoute>} />
       <Route path="/editor/:siteId" element={<PrivateRoute><Editor /></PrivateRoute>} />
       <Route path="/settings" element={<PrivateRoute><Settings /></PrivateRoute>} />
+      <Route path="/deploy" element={<PrivateRoute><Deploy /></PrivateRoute>} />
+      <Route path="/keys" element={<PrivateRoute><Keys /></PrivateRoute>} />
+      <Route path="/deployments" element={<PrivateRoute><Deployments /></PrivateRoute>} />
+      <Route path="/github" element={<PrivateRoute><GitHub /></PrivateRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )

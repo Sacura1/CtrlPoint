@@ -52,6 +52,25 @@ export const cfg = {
   mnsPublicDomain: mnsPublicDomain || 'massahub.network',
   nodeEnv: process.env.NODE_ENV || 'development',
 
+  // AES-256-GCM key for encrypting user API keys (32-byte hex string)
+  encryptionKey: process.env.ENCRYPTION_KEY || 'dev00000000000000000000000000000000000000000000000000000000000000',
+
+  // GitHub OAuth App
+  githubClientId: process.env.GITHUB_CLIENT_ID || '',
+  githubClientSecret: process.env.GITHUB_CLIENT_SECRET || '',
+  githubWebhookSecret: process.env.GITHUB_WEBHOOK_SECRET || '',
+  // GitHub App (selected-repository access for deploys)
+  githubAppName: process.env.GITHUB_APP_NAME || '',
+  githubAppId: process.env.GITHUB_APP_ID || '',
+  githubAppPrivateKey: (process.env.GITHUB_APP_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
+  // Callback URL must match exactly what's registered in the GitHub OAuth App
+  // Dev: http://localhost:3001/api/github/callback  |  Prod: https://ctrlpoint.dev/api/github/callback
+  githubCallbackUrl: process.env.GITHUB_CALLBACK_URL || 'http://localhost:3001/api/github/callback',
+  githubAppSetupUrl: process.env.GITHUB_APP_SETUP_URL || 'http://localhost:3001/api/github/setup',
+
+  // Feature flags
+  enableModelSelection: process.env.ENABLE_MODEL_SELECTION === 'true',
+
   // Credits cost per action
   credits: {
     deploy: 1,

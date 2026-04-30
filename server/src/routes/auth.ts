@@ -37,19 +37,30 @@ function userPayload(user: { id: string; email: string; credits: number; massaAd
 
 router.post('/google', async (req: Request, res: Response, next) => {
   try {
-    const { idToken } = req.body
-    if (!idToken) throw new AppError(400, 'Google ID token is required.')
+    const { idToken, accessToken } = req.body
+    if (!idToken && !accessToken) throw new AppError(400, 'Google token is required.')
     if (!cfg.googleClientId) throw new AppError(503, 'Google auth is not configured.')
 
-    // Verify the token with Google
-    const ticket = await googleClient.verifyIdToken({
-      idToken,
-      audience: cfg.googleClientId,
-    })
-    const payload = ticket.getPayload()
-    if (!payload?.email) throw new AppError(400, 'Could not retrieve email from Google account.')
+    let googleId: string
+    let email: string
 
-    const { sub: googleId, email, name } = payload
+    if (idToken) {
+      const ticket = await googleClient.verifyIdToken({ idToken, audience: cfg.googleClientId })
+      const payload = ticket.getPayload()
+      if (!payload?.email) throw new AppError(400, 'Could not retrieve email from Google account.')
+      googleId = payload.sub!
+      email = payload.email
+    } else {
+      // accessToken flow from useGoogleLogin hook
+      const infoRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      })
+      if (!infoRes.ok) throw new AppError(400, 'Could not verify Google access token.')
+      const info = await infoRes.json() as any
+      if (!info.sub || !info.email) throw new AppError(400, 'Could not retrieve email from Google account.')
+      googleId = info.sub
+      email = info.email
+    }
 
     // Find existing user by googleId or email, or create new
     let user = await prisma.user.findFirst({

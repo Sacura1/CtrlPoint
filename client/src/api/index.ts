@@ -1,9 +1,15 @@
 import { User, Site, DeployStatus, CreditPackage } from '../types'
 
-const BASE = (import.meta.env.VITE_API_URL || '') + '/api'
+export const API_ORIGIN = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '')
+const BASE = API_ORIGIN + '/api'
+
+export function apiUrl(path: string): string {
+  const normalized = path.startsWith('/') ? path : `/${path}`
+  return BASE + normalized
+}
 
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(BASE + url, {
+  const res = await fetch(apiUrl(url), {
     credentials: 'include',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
     ...options,
@@ -24,8 +30,8 @@ export interface AIResponse {
 
 // Auth
 export const auth = {
-  google: (idToken: string) =>
-    request<{ user: User }>('/auth/google', { method: 'POST', body: JSON.stringify({ idToken }) }),
+  google: (token: string, type: 'idToken' | 'accessToken' = 'accessToken') =>
+    request<{ user: User }>('/auth/google', { method: 'POST', body: JSON.stringify({ [type]: token }) }),
   register: (email: string, password: string, massaAddress?: string) =>
     request<{ user: User }>('/auth/register', { method: 'POST', body: JSON.stringify({ email, password, massaAddress }) }),
   login: (email: string, password: string) =>
@@ -40,10 +46,10 @@ export const auth = {
 
 // AI Chat
 export const generate = {
-  chat: (history: ChatMessage[]) =>
-    request<AIResponse>('/generate', { method: 'POST', body: JSON.stringify({ history }) }),
-  update: (siteId: string, history: ChatMessage[]) =>
-    request<AIResponse>(`/generate/update/${siteId}`, { method: 'POST', body: JSON.stringify({ history }) }),
+  chat: (history: ChatMessage[], model?: string, currentHtml?: string) =>
+    request<AIResponse>('/generate', { method: 'POST', body: JSON.stringify({ history, model, currentHtml }) }),
+  update: (siteId: string, history: ChatMessage[], model?: string) =>
+    request<AIResponse>(`/generate/update/${siteId}`, { method: 'POST', body: JSON.stringify({ history, model }) }),
   revert: (siteId: string) =>
     request<AIResponse>(`/generate/revert/${siteId}`, { method: 'POST' }),
 }
@@ -55,6 +61,7 @@ export const sites = {
   create: (data: { mnsName: string; generatedCode: string; title: string; description: string; lastPrompt?: string }) =>
     request<{ site: Site }>('/sites', { method: 'POST', body: JSON.stringify(data) }),
   delete: (id: string) => request(`/sites/${id}`, { method: 'DELETE' }),
+  deployments: (id: string) => request<{ deployments: import('../types').SiteDeployment[] }>(`/sites/${id}/deployments`),
   transferOwnership: (id: string) => request(`/sites/${id}/transfer-ownership`, { method: 'POST' }),
 }
 
@@ -65,6 +72,44 @@ export const deploy = {
   start: (siteId: string) =>
     request<{ deploymentId: string }>('/deploy', { method: 'POST', body: JSON.stringify({ siteId }) }),
   status: (deploymentId: string) => request<DeployStatus>(`/deploy/status/${deploymentId}`),
+}
+
+// GitHub
+export const github = {
+  status: () => request<{ connected: boolean }>('/github/status'),
+  repos: () => request<{ repos: any[] }>('/github/repos'),
+  connection: (siteId: string) => request<any>(`/github/connection/${siteId}`).catch(() => null),
+  deployNew: (data: { mnsName: string; repoOwner: string; repoName: string; branch: string; projectType: string; buildCommand: string; outputDir: string; githubInstallationId?: string }) =>
+    request<{ siteId: string; mnsName: string }>('/github/deploy-new', { method: 'POST', body: JSON.stringify(data) }),
+  connect: (data: { siteId: string; repoOwner: string; repoName: string; branch: string; projectType: string; buildCommand: string; outputDir: string; githubInstallationId?: string }) =>
+    request<{ connection: any }>('/github/connect', { method: 'POST', body: JSON.stringify(data) }),
+  disconnect: (siteId: string) =>
+    request<{ ok: boolean }>(`/github/connect/${siteId}`, { method: 'DELETE' }),
+}
+
+// File upload
+export const upload = {
+  file: async (file: File): Promise<{ html?: string; title?: string; multiFile?: boolean; message?: string }> => {
+    const form = new FormData()
+    form.append('file', file)
+    const res = await fetch(apiUrl('/upload'), {
+      method: 'POST',
+      credentials: 'include',
+      body: form,
+    })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error || 'Upload failed')
+    return data
+  },
+}
+
+// User API Keys
+export const keys = {
+  list: () => request<{ keys: Record<string, boolean> }>('/keys'),
+  save: (provider: string, apiKey: string) =>
+    request<{ ok: boolean }>('/keys', { method: 'POST', body: JSON.stringify({ provider, apiKey }) }),
+  remove: (provider: string) =>
+    request<{ ok: boolean }>(`/keys/${provider}`, { method: 'DELETE' }),
 }
 
 // Billing

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import Header from '../components/Header'
-import { sites as sitesApi } from '../api'
+import { sites as sitesApi, github as githubApi } from '../api'
 import { Site } from '../types'
 import { getSiteUrl, mnsPublicDomain } from '../utils/siteUrl'
 
@@ -18,11 +18,22 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [confirmDelete, setConfirmDelete] = useState<Site | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [ghConnections, setGhConnections] = useState<Record<string, { repoOwner: string; repoName: string; branch: string }>>({})
   const navigate = useNavigate()
 
   useEffect(() => {
+    const STATUS_ORDER: Record<string, number> = { LIVE: 0, DEPLOYING: 1, UPDATING: 1, ERROR: 2, DRAFT: 3 }
     sitesApi.list()
-      .then(({ sites }) => setSiteList(sites))
+      .then(({ sites }) => {
+        const sorted = [...sites].sort((a, b) => (STATUS_ORDER[a.status] ?? 3) - (STATUS_ORDER[b.status] ?? 3))
+        setSiteList(sorted)
+        // Load GitHub connections for badge display
+        sorted.forEach(s => {
+          githubApi.connection(s.id)
+            .then(c => { if (c) setGhConnections(prev => ({ ...prev, [s.id]: c })) })
+            .catch(() => {})
+        })
+      })
       .finally(() => setLoading(false))
   }, [])
 
@@ -52,18 +63,13 @@ export default function Dashboard() {
       <main className="relative z-10 max-w-3xl mx-auto px-4 sm:px-6 py-10">
 
         {/* Title row */}
-        <div className="flex items-center justify-between mb-8 animate-fade-in">
-          <div>
-            <h1 className="text-2xl font-bold text-ink-50">My Sites</h1>
-            {!loading && (
-              <p className="text-ink-600 text-sm mt-0.5">
-                {siteList.length === 0 ? 'No sites yet' : `${siteList.length} site${siteList.length !== 1 ? 's' : ''} deployed`}
-              </p>
-            )}
-          </div>
-          <Link to="/editor" className="btn-primary text-sm py-2 px-4">
-            + New site
-          </Link>
+        <div className="mb-8 animate-fade-in">
+          <h1 className="text-2xl font-bold text-ink-50">My Web-Apps</h1>
+          {!loading && (
+            <p className="text-ink-600 text-sm mt-0.5">
+              {siteList.length === 0 ? 'No web-apps yet' : `${siteList.length} web-app${siteList.length !== 1 ? 's' : ''} deployed`}
+            </p>
+          )}
         </div>
 
         {/* List */}
@@ -93,19 +99,41 @@ export default function Dashboard() {
                   </div>
 
                   {/* Info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <span className="font-semibold text-ink-100 truncate text-sm">{site.title}</span>
+                  <div className="flex-1 overflow-hidden">
+                    <span className="block font-semibold text-sm font-mono whitespace-nowrap" style={{ color: '#f0f0ff' }}>
+                      {site.mnsName}.{mnsPublicDomain}
+                    </span>
+                    <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                      {/* Status */}
                       <span className="text-xs px-2 py-0.5 rounded-full flex-shrink-0 font-medium"
                         style={{ background: s.color, color: s.dot }}>
                         {s.label}
                       </span>
+                      {/* Deployment method */}
+                      {ghConnections[site.id] ? (
+                        <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0"
+                          style={{ background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.2)', color: '#a78bfa' }}>
+                          <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
+                          </svg>
+                          {ghConnections[site.id].repoOwner}/{ghConnections[site.id].repoName}
+                        </span>
+                      ) : site.lastPrompt ? (
+                        <span className="text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0"
+                          style={{ background: 'rgba(52,211,153,0.08)', border: '1px solid rgba(52,211,153,0.18)', color: '#34d399' }}>
+                          Agent
+                        </span>
+                      ) : (
+                        <span className="text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0"
+                          style={{ background: 'rgba(99,179,237,0.08)', border: '1px solid rgba(99,179,237,0.18)', color: '#63b3ed' }}>
+                          File Upload
+                        </span>
+                      )}
                     </div>
-                    <span className="text-ink-600 text-xs font-mono">{site.mnsName}.{mnsPublicDomain}</span>
                   </div>
 
                   {/* Actions — appear on hover */}
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all duration-200 flex-shrink-0">
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all duration-200">
                     {site.status === 'LIVE' && (
                       <a href={getSiteUrl(site.mnsName)} target="_blank" rel="noopener noreferrer"
                         onClick={e => e.stopPropagation()}
@@ -174,9 +202,9 @@ function EmptyState() {
           <path d="M10 4v12M4 10h12" stroke="#7c3aed" strokeWidth="1.8" strokeLinecap="round"/>
         </svg>
       </div>
-      <p className="text-ink-200 font-semibold text-base mb-2">No sites yet</p>
+      <p className="text-ink-200 font-semibold text-base mb-2">No web-apps yet</p>
       <p className="text-ink-600 text-sm mb-8 max-w-xs">Describe what you want to build. AI does the rest.</p>
-      <Link to="/editor" className="btn-primary text-sm px-6">Build your first site</Link>
+      <Link to="/editor" className="btn-primary text-sm px-6">Build your first web-app</Link>
     </div>
   )
 }

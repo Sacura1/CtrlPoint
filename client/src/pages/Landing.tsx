@@ -28,9 +28,19 @@ export default function Landing() {
       <nav className="relative z-10 flex items-center justify-between px-6 sm:px-10 h-16"
         style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
         <img src="/logo.png" className="h-7 w-auto" alt="CtrlPoint" />
-        <Link to={user ? '/editor' : '/auth'} className="btn-primary text-sm py-2 px-5">
-          {user ? 'Open editor' : 'Get started →'}
-        </Link>
+        {user ? (
+          <Link to="/editor" className="btn-primary text-sm py-2 px-5">Open editor</Link>
+        ) : (
+          <div className="flex items-center gap-2">
+            <Link to="/auth" className="text-sm font-medium px-4 py-2 rounded-xl transition-all"
+              style={{ color: 'rgba(200,200,224,0.7)', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)' }}
+              onMouseEnter={e => { e.currentTarget.style.color = '#f0f0ff'; e.currentTarget.style.background = 'rgba(255,255,255,0.08)' }}
+              onMouseLeave={e => { e.currentTarget.style.color = 'rgba(200,200,224,0.7)'; e.currentTarget.style.background = 'rgba(255,255,255,0.04)' }}>
+              Log in
+            </Link>
+            <Link to="/auth?mode=register" className="btn-primary text-sm py-2 px-5">Get started →</Link>
+          </div>
+        )}
       </nav>
 
       {/* Hero */}

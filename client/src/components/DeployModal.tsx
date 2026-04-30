@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { deploy as deployApi, sites as sitesApi } from '../api'
 import { DeployStatus, Site } from '../types'
 import { useAuth } from '../store/auth'
@@ -12,6 +12,7 @@ interface Props {
   existingSite?: Site
   onClose: () => void
   onDeployed: (site: Site) => void
+  onLive?: (siteId: string) => void
 }
 
 const STEPS: Record<string, string> = {
@@ -24,7 +25,7 @@ const STEPS: Record<string, string> = {
 
 const STEP_ORDER = ['QUEUED', 'UPLOADING', 'MNS_REGISTERING', 'COMPLETE']
 
-export default function DeployModal({ generatedCode, title, description, lastPrompt, existingSite, onClose, onDeployed }: Props) {
+export default function DeployModal({ generatedCode, title, description, lastPrompt, existingSite, onClose, onDeployed, onLive }: Props) {
   const { user, setUser } = useAuth()
   const [mnsName, setMnsName]        = useState(existingSite?.mnsName ?? '')
   const [mnsAvailable, setAvailable] = useState<boolean | null>(null)
@@ -33,6 +34,7 @@ export default function DeployModal({ generatedCode, title, description, lastPro
   const [deploymentId, setDepId]     = useState<string | null>(null)
   const [status, setStatus]          = useState<DeployStatus | null>(null)
   const [error, setError]            = useState('')
+  const siteIdRef = useRef<string | null>(existingSite?.id ?? null)
 
   const isUpdate = !!existingSite?.scAddress
 
@@ -59,8 +61,10 @@ export default function DeployModal({ generatedCode, title, description, lastPro
         if (s.status === 'COMPLETE' || s.status === 'FAILED') {
           clearInterval(iv)
           setDeploying(false)
-          if (s.status === 'COMPLETE' && user)
-            setUser({ ...user, credits: user.credits - 1 })
+          if (s.status === 'COMPLETE') {
+            if (user) setUser({ ...user, credits: user.credits - 1 })
+            if (onLive) onLive(existingSite?.id ?? siteIdRef.current!)
+          }
         }
       } catch {}
     }, 2000)
@@ -75,6 +79,7 @@ export default function DeployModal({ generatedCode, title, description, lastPro
       if (!siteId) {
         const { site } = await sitesApi.create({ mnsName, generatedCode, title, description, lastPrompt })
         siteId = site.id
+        siteIdRef.current = siteId
         onDeployed(site)
       }
       const { deploymentId: id } = await deployApi.start(siteId)

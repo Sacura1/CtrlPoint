@@ -8,16 +8,22 @@ datasource db {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  passwordHash String?
-  googleId     String?  @unique
-  massaAddress String?
-  credits      Int      @default(3)
-  createdAt    DateTime @default(now())
+  id              String   @id @default(cuid())
+  email           String   @unique
+  passwordHash    String?
+  googleId        String?  @unique
+  githubId        String?  @unique
+  githubToken     String?
+  githubTokenIv   String?
+  massaAddress    String?
+  credits         Int      @default(3)
+  createdAt       DateTime @default(now())
 
-  sites        Site[]
-  transactions CreditTransaction[]
+  sites           Site[]
+  transactions    CreditTransaction[]
+  apiKeys         UserApiKey[]
+  githubConnections GitHubConnection[]
+  githubInstallations GitHubInstallation[]
 }
 
 model Site {
@@ -32,10 +38,12 @@ model Site {
   lastPrompt    String?
   title         String     @default("My Site")
   description   String     @default("")
+  needsDeploy   Boolean    @default(false)
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
 
-  deployments   Deployment[]
+  deployments       Deployment[]
+  githubConnection  GitHubConnection?
 }
 
 model Deployment {
@@ -44,6 +52,9 @@ model Deployment {
   site      Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
   type      String   @default("INITIAL")
   status    String   @default("QUEUED")
+  source    String   @default("agent")
+  commitSha String?
+  step      String?
   errorMsg  String?
   scAddress String?
   createdAt DateTime @default(now())
@@ -59,4 +70,46 @@ model CreditTransaction {
   stripePaymentId String?
   note            String?
   createdAt       DateTime @default(now())
+}
+
+model GitHubConnection {
+  id               String   @id @default(cuid())
+  siteId           String   @unique
+  site             Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  githubInstallationId String?
+  repoOwner        String
+  repoName         String
+  branch           String   @default("main")
+  projectType      String   @default("static")
+  buildCommand     String   @default("npm run build")
+  outputDir        String   @default("dist")
+  lastDeployedSha  String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model GitHubInstallation {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  installationId String   @unique
+  accountLogin   String?
+  accountType    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model UserApiKey {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider     String
+  encryptedKey String
+  iv           String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([userId, provider])
 }
