@@ -180,10 +180,10 @@ router.get('/callback', async (req: Request, res: Response, next) => {
     res.cookie('token', token, {
       httpOnly: true,
       secure: cfg.nodeEnv === 'production',
-      sameSite: 'lax',
+      sameSite: cfg.nodeEnv === 'production' ? 'none' : 'lax',
       maxAge: 7 * 24 * 60 * 60 * 1000,
     })
-    res.redirect(`${cfg.clientUrl}/deploy`)
+    res.redirect(`${cfg.clientUrl}/editor`)
   } catch (err) { next(err) }
 })
 

@@ -89,4 +89,8 @@ export function validateConfig() {
   if (missing.length > 0 && cfg.nodeEnv === 'production') {
     throw new Error(`Missing required env vars: ${missing.join(', ')}`)
   }
+
+  if (cfg.nodeEnv === 'production' && !/^[a-f0-9]{64}$/i.test(cfg.encryptionKey)) {
+    throw new Error('ENCRYPTION_KEY must be a 32-byte hex string. Generate one with: openssl rand -hex 32')
+  }
 }
