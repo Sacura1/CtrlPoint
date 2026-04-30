@@ -284,7 +284,6 @@ router.post('/deploy-new', requireAuth, async (req: AuthRequest, res: Response, 
 
     const user = await prisma.user.findUnique({ where: { id: req.user!.userId } })
     if (!user) throw new AppError(404, 'User not found.')
-    if (user.credits < 1) throw new AppError(402, 'Not enough credits. You need at least 1 to deploy.')
     if (!cfg.githubWebhookSecret) throw new AppError(503, 'GitHub webhooks not configured on this server.')
 
     const branchName = branch || 'main'

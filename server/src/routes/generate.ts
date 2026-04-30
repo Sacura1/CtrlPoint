@@ -29,6 +29,39 @@ async function resolveUserKeys(userId: string): Promise<UserKeys> {
   return keys
 }
 
+function selectedProvider(model: AllowedModel | undefined): 'openai' | 'anthropic' {
+  if (model) return model.startsWith('gpt-') ? 'openai' : 'anthropic'
+  return cfg.aiProvider === 'openai' ? 'openai' : 'anthropic'
+}
+
+function hasUserKeyForProvider(userKeys: UserKeys, provider: 'openai' | 'anthropic'): boolean {
+  return provider === 'openai' ? !!userKeys.openaiKey : !!userKeys.anthropicKey
+}
+
+async function chargeAiCredit(userId: string, type: 'generate' | 'edit', note: string) {
+  const cost = cfg.credits.generate
+  if (cost <= 0) return
+
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { credits: true } })
+  if (!user) throw new AppError(404, 'User not found.')
+  if (user.credits < cost) {
+    throw new AppError(402, `Insufficient credits. AI ${type} costs ${cost} credit(s). You have ${user.credits}.`)
+  }
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: { credits: { decrement: cost } },
+  })
+  await prisma.creditTransaction.create({
+    data: {
+      userId,
+      amount: -cost,
+      type,
+      note,
+    },
+  })
+}
+
 // Chat with agent (new site or existing)
 router.post('/', requireAuth, async (req: AuthRequest, res: Response, next) => {
   try {
@@ -41,11 +74,17 @@ router.post('/', requireAuth, async (req: AuthRequest, res: Response, next) => {
     if (!last?.content?.trim()) throw new AppError(400, 'Last message cannot be empty.')
     if (last.content.length > 2000) throw new AppError(400, 'Message too long (max 2000 chars).')
 
+    const model = resolveModel(req.body)
     const userKeys = await resolveUserKeys(req.user!.userId)
     // If caller provides existing HTML (e.g. uploaded file), edit it rather than generate from scratch
     const response = currentHtml
-      ? await updateSiteChat(currentHtml, history as ChatMessage[], resolveModel(req.body), userKeys)
-      : await chat(history as ChatMessage[], resolveModel(req.body), userKeys)
+      ? await updateSiteChat(currentHtml, history as ChatMessage[], model, userKeys)
+      : await chat(history as ChatMessage[], model, userKeys)
+
+    if (response.type === 'site' && !hasUserKeyForProvider(userKeys, selectedProvider(model))) {
+      await chargeAiCredit(req.user!.userId, currentHtml ? 'edit' : 'generate', currentHtml ? 'AI edit uploaded site' : 'AI site generation')
+    }
+
     res.json(response)
   } catch (err) { next(err) }
 })
@@ -65,11 +104,16 @@ router.post('/update/:siteId', requireAuth, async (req: AuthRequest, res: Respon
     if (site.status === 'DEPLOYING' || site.status === 'UPDATING')
       throw new AppError(409, 'Site is currently deploying. Wait for it to finish.')
 
+    const model = resolveModel(req.body)
     const userKeys = await resolveUserKeys(req.user!.userId)
-    const response = await updateSiteChat(site.generatedCode, history as ChatMessage[], resolveModel(req.body), userKeys)
+    const response = await updateSiteChat(site.generatedCode, history as ChatMessage[], model, userKeys)
 
     // If AI generated new HTML, save it
     if (response.type === 'site') {
+      if (!hasUserKeyForProvider(userKeys, selectedProvider(model))) {
+        await chargeAiCredit(req.user!.userId, 'edit', `AI edit ${site.mnsName}`)
+      }
+
       await prisma.site.update({
         where: { id: siteId },
         data: {

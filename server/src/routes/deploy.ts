@@ -52,13 +52,7 @@ router.post('/', requireAuth, async (req: AuthRequest, res: Response, next) => {
     }
     if (!site.generatedCode) throw new AppError(400, 'Site has no generated code. Generate a site first.')
 
-    // Check credits
-    const user = await prisma.user.findUnique({ where: { id: req.user!.userId } })
-    if (!user) throw new AppError(404, 'User not found.')
     const isUpdate = site.status === 'LIVE'
-    const creditCost = isUpdate ? cfg.credits.update : cfg.credits.deploy
-    if (user.credits < creditCost)
-      throw new AppError(402, `Insufficient credits. This action costs ${creditCost} credit(s). You have ${user.credits}.`)
 
     // Check MNS availability for initial deploys (fail-open: if check errors, let deploy proceed)
     if (!isUpdate) {
@@ -66,20 +60,6 @@ router.post('/', requireAuth, async (req: AuthRequest, res: Response, next) => {
       if (available === false)
         throw new AppError(409, `The MNS name "${site.mnsName}" is already registered on Massa. Please choose a different name.`)
     }
-
-    // Deduct credits atomically
-    await prisma.user.update({
-      where: { id: user.id },
-      data: { credits: { decrement: creditCost } },
-    })
-    await prisma.creditTransaction.create({
-      data: {
-        userId: user.id,
-        amount: -creditCost,
-        type: isUpdate ? 'update' : 'deploy',
-        note: `${isUpdate ? 'Update' : 'Deploy'} ${site.mnsName}`,
-      },
-    })
 
     // Mark site as deploying
     await prisma.site.update({

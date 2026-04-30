@@ -194,17 +194,6 @@ export async function deployGitHubSite(connection: any, sha: string) {
 
   const token = await createInstallationToken(githubInstallationId)
 
-  // Deduct 1 credit (same as a manual update)
-  const updated = await prisma.user.update({
-    where: { id: user.id },
-    data: { credits: { decrement: 1 } },
-  })
-  if (updated.credits < 0) {
-    await prisma.user.update({ where: { id: user.id }, data: { credits: { increment: 1 } } })
-    log(label, 'Insufficient credits — skipping deploy')
-    return
-  }
-
   // Create deployment record for activity feed
   const deployment = await prisma.deployment.create({
     data: {
@@ -265,8 +254,6 @@ export async function deployGitHubSite(connection: any, sha: string) {
     log(label, `Deploy failed: ${err.message}`)
     await prisma.site.update({ where: { id: site.id }, data: { status: 'ERROR' } }).catch(() => {})
     await prisma.deployment.update({ where: { id: deployment.id }, data: { status: 'FAILED', step: 'Failed', errorMsg: err.message } }).catch(() => {})
-    // Refund credit on failure
-    await prisma.user.update({ where: { id: user.id }, data: { credits: { increment: 1 } } })
     throw err
   } finally {
     if (tmpDir) await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {})

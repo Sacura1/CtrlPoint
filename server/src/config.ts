@@ -73,9 +73,9 @@ export const cfg = {
 
   // Credits cost per action
   credits: {
-    deploy: 1,
-    update: 1,
-    generate: 0,
+    deploy: 0,
+    update: 0,
+    generate: 1,
   },
 
   // MAS balance threshold to warn admin (in nanoMAS)

@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { deploy as deployApi, sites as sitesApi } from '../api'
 import { DeployStatus, Site } from '../types'
-import { useAuth } from '../store/auth'
 import { mnsPublicDomain } from '../utils/siteUrl'
 
 interface Props {
@@ -26,7 +25,6 @@ const STEPS: Record<string, string> = {
 const STEP_ORDER = ['QUEUED', 'UPLOADING', 'MNS_REGISTERING', 'COMPLETE']
 
 export default function DeployModal({ generatedCode, title, description, lastPrompt, existingSite, onClose, onDeployed, onLive }: Props) {
-  const { user, setUser } = useAuth()
   const [mnsName, setMnsName]        = useState(existingSite?.mnsName ?? '')
   const [mnsAvailable, setAvailable] = useState<boolean | null>(null)
   const [checking, setChecking]      = useState(false)
@@ -62,7 +60,6 @@ export default function DeployModal({ generatedCode, title, description, lastPro
           clearInterval(iv)
           setDeploying(false)
           if (s.status === 'COMPLETE') {
-            if (user) setUser({ ...user, credits: user.credits - 1 })
             if (onLive) onLive(existingSite?.id ?? siteIdRef.current!)
           }
         }
@@ -180,14 +177,10 @@ export default function DeployModal({ generatedCode, title, description, lastPro
                 </div>
               )}
 
-              {/* Cost */}
-              <div className="flex items-center justify-between py-3"
+              {/* Deploy note */}
+              <div className="py-3"
                 style={{ borderTop: '1px solid rgba(255,255,255,0.06)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-                <span className="text-sm text-ink-600">Estimated cost</span>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-sm font-bold text-brand-400">1</span>
-                  <span className="text-xs text-ink-600">credit</span>
-                </div>
+                <p className="text-sm text-ink-600">Deployments are free. Credits are only used for AI generation and edits.</p>
               </div>
 
               {/* Error */}
