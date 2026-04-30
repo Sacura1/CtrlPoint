@@ -13,6 +13,7 @@ const exec = promisify(execFile)
 const prisma = new PrismaClient()
 
 const log = (label: string, msg: string) => console.log(`[github-deploy:${label}] ${msg}`)
+type PackageManager = 'npm' | 'pnpm' | 'yarn'
 
 async function githubFetch(url: string, token: string) {
   const res = await fetch(url, {
@@ -85,6 +86,102 @@ async function createInstallationToken(installationId: string): Promise<string> 
   return data.token
 }
 
+async function fileExists(filePath: string): Promise<boolean> {
+  return fs.access(filePath).then(() => true).catch(() => false)
+}
+
+async function readJson<T = any>(filePath: string): Promise<T | null> {
+  try {
+    return JSON.parse(await fs.readFile(filePath, 'utf8')) as T
+  } catch {
+    return null
+  }
+}
+
+async function detectPackageManager(repoDir: string): Promise<PackageManager> {
+  if (await fileExists(path.join(repoDir, 'pnpm-lock.yaml'))) return 'pnpm'
+  if (await fileExists(path.join(repoDir, 'yarn.lock'))) return 'yarn'
+  return 'npm'
+}
+
+async function runCommand(command: string, args: string[], cwd: string, timeout: number) {
+  try {
+    return await exec(command, args, { cwd, timeout })
+  } catch (err: any) {
+    const detail = String(err?.stderr || err?.stdout || err?.message || '').trim()
+    throw new Error(detail.slice(0, 900) || `${command} ${args.join(' ')} failed.`)
+  }
+}
+
+async function ensureCorepack(repoDir: string, pm: PackageManager) {
+  if (pm === 'npm') return
+  await runCommand('corepack', ['enable'], repoDir, 60_000).catch(() => {})
+}
+
+async function installDependencies(repoDir: string, label: string): Promise<PackageManager> {
+  const pm = await detectPackageManager(repoDir)
+  await ensureCorepack(repoDir, pm)
+
+  if (pm === 'pnpm') {
+    log(label, 'Installing dependencies with pnpm...')
+    await runCommand('pnpm', ['install', '--frozen-lockfile'], repoDir, 240_000)
+    return pm
+  }
+
+  if (pm === 'yarn') {
+    log(label, 'Installing dependencies with yarn...')
+    await runCommand('yarn', ['install', '--frozen-lockfile'], repoDir, 240_000)
+    return pm
+  }
+
+  if (await fileExists(path.join(repoDir, 'package-lock.json'))) {
+    log(label, 'Installing dependencies with npm ci...')
+    await runCommand('npm', ['ci', '--prefer-offline', '--no-audit'], repoDir, 240_000)
+  } else {
+    log(label, 'Installing dependencies with npm install...')
+    await runCommand('npm', ['install', '--prefer-offline', '--no-audit'], repoDir, 240_000)
+  }
+  return pm
+}
+
+function normalizeBuildCommand(buildCommand: string, pm: PackageManager): string[] {
+  const trimmed = (buildCommand || 'npm run build').trim()
+  if (trimmed === 'npm run build' && pm === 'pnpm') return ['pnpm', 'run', 'build']
+  if (trimmed === 'npm run build' && pm === 'yarn') return ['yarn', 'build']
+  return trimmed.split(/\s+/)
+}
+
+async function runBuild(repoDir: string, buildCommand: string, pm: PackageManager, label: string) {
+  const [cmd, ...args] = normalizeBuildCommand(buildCommand, pm)
+  log(label, `Running build command: ${[cmd, ...args].join(' ')}`)
+  await runCommand(cmd, args, repoDir, 420_000)
+}
+
+async function resolveBuildDir(repoDir: string, configuredOutputDir: string): Promise<string> {
+  const configured = path.join(repoDir, configuredOutputDir || 'dist')
+  if (await fileExists(path.join(configured, 'index.html'))) return configured
+
+  const candidates = ['dist', 'build', 'out']
+  for (const candidate of candidates) {
+    const dir = path.join(repoDir, candidate)
+    if (dir !== configured && await fileExists(path.join(dir, 'index.html'))) return dir
+  }
+
+  return configured
+}
+
+async function explainMissingIndex(repoDir: string, outputDir: string): Promise<string> {
+  const pkg = await readJson<{ dependencies?: Record<string, string>; devDependencies?: Record<string, string> }>(path.join(repoDir, 'package.json'))
+  const deps = { ...(pkg?.dependencies || {}), ...(pkg?.devDependencies || {}) }
+  const hasNext = Boolean(deps.next || await fileExists(path.join(repoDir, 'next.config.js')) || await fileExists(path.join(repoDir, 'next.config.mjs')))
+
+  if (hasNext) {
+    return 'Build finished, but no static index.html was found. Next.js apps must be configured for static export and usually use output directory "out". CtrlPoint cannot deploy SSR, API routes, or server actions.'
+  }
+
+  return `Build finished, but "${outputDir}/index.html" was not found. Set Output Dir to the folder your build creates, commonly "dist" for Vite, "build" for Create React App, or "out" for static Next.js export.`
+}
+
 export async function deployGitHubSite(connection: any, sha: string) {
   const { site, user, repoOwner, repoName, branch, projectType, buildCommand, outputDir, githubInstallationId } = connection
   const label = `${repoOwner}/${repoName}`
@@ -141,23 +238,19 @@ export async function deployGitHubSite(connection: any, sha: string) {
 
       await finalizeDeploy(site, scAddress, sha, html, deployment.id)
     } else {
-      // Framework build: clone → install → build → upload
+      // Framework build: clone -> install -> build -> upload
       tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ctrlpoint-gh-'))
       log(label, `Cloning ${repoOwner}/${repoName}@${branch} into ${tmpDir}...`)
 
       const cloneUrl = `https://x-access-token:${token}@github.com/${repoOwner}/${repoName}.git`
-      await exec('git', ['clone', '--depth=1', `--branch=${branch}`, cloneUrl, tmpDir], { timeout: 120_000 })
+      await runCommand('git', ['clone', '--depth=1', `--branch=${branch}`, cloneUrl, tmpDir], process.cwd(), 120_000)
 
-      log(label, 'Running npm install...')
-      await exec('npm', ['install', '--prefer-offline', '--no-audit'], { cwd: tmpDir, timeout: 180_000 })
+      const pm = await installDependencies(tmpDir, label)
+      await runBuild(tmpDir, buildCommand, pm, label)
 
-      log(label, `Running build command: ${buildCommand}`)
-      const [cmd, ...args] = buildCommand.split(' ')
-      await exec(cmd, args, { cwd: tmpDir, timeout: 300_000 })
-
-      const buildDir = path.join(tmpDir, outputDir)
-      const indexExists = await fs.access(path.join(buildDir, 'index.html')).then(() => true).catch(() => false)
-      if (!indexExists) throw new Error(`Build output directory "${outputDir}" has no index.html. Check your build command and output directory setting.`)
+      const buildDir = await resolveBuildDir(tmpDir, outputDir)
+      const indexExists = await fileExists(path.join(buildDir, 'index.html'))
+      if (!indexExists) throw new Error(await explainMissingIndex(tmpDir, outputDir))
 
       log(label, `Uploading ${buildDir} to DeWeb...`)
       const { scAddress } = await uploadDirectory(buildDir, site.title, site.description, site.scAddress || undefined,
