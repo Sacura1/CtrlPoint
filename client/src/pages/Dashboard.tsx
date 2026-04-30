@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import Header from '../components/Header'
 import { sites as sitesApi, github as githubApi } from '../api'
@@ -21,21 +21,29 @@ export default function Dashboard() {
   const [ghConnections, setGhConnections] = useState<Record<string, { repoOwner: string; repoName: string; branch: string }>>({})
   const navigate = useNavigate()
 
-  useEffect(() => {
+  const loadSites = useCallback(async () => {
     const STATUS_ORDER: Record<string, number> = { LIVE: 0, DEPLOYING: 1, UPDATING: 1, ERROR: 2, DRAFT: 3 }
-    sitesApi.list()
-      .then(({ sites }) => {
-        const sorted = [...sites].sort((a, b) => (STATUS_ORDER[a.status] ?? 3) - (STATUS_ORDER[b.status] ?? 3))
-        setSiteList(sorted)
-        // Load GitHub connections for badge display
-        sorted.forEach(s => {
-          githubApi.connection(s.id)
-            .then(c => { if (c) setGhConnections(prev => ({ ...prev, [s.id]: c })) })
-            .catch(() => {})
-        })
-      })
-      .finally(() => setLoading(false))
+    const { sites } = await sitesApi.list()
+    const sorted = [...sites].sort((a, b) => (STATUS_ORDER[a.status] ?? 3) - (STATUS_ORDER[b.status] ?? 3))
+    setSiteList(sorted)
+
+    const pairs = await Promise.all(
+      sorted.map(s => githubApi.connection(s.id).then(c => c ? [s.id, c] as const : null).catch(() => null))
+    )
+    const connections: Record<string, { repoOwner: string; repoName: string; branch: string }> = {}
+    pairs.forEach(pair => { if (pair) connections[pair[0]] = pair[1] })
+    setGhConnections(connections)
   }, [])
+
+  useEffect(() => {
+    loadSites().finally(() => setLoading(false))
+  }, [loadSites])
+
+  useEffect(() => {
+    const hasBusySite = siteList.some(site => site.status === 'DEPLOYING' || site.status === 'UPDATING')
+    const iv = setInterval(loadSites, hasBusySite ? 3000 : 10000)
+    return () => clearInterval(iv)
+  }, [loadSites, siteList])
 
   const handleDelete = async (site: Site) => {
     setDeletingId(site.id)

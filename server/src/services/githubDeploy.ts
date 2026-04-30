@@ -58,7 +58,11 @@ async function inlineGithubAssets(html: string, repoOwner: string, repoName: str
 }
 
 function githubAppJwt() {
-  if (!cfg.githubAppId || !cfg.githubAppPrivateKey) throw new Error('GitHub App is not configured.')
+  const missing = [
+    ['GITHUB_APP_ID', cfg.githubAppId],
+    ['GITHUB_APP_PRIVATE_KEY', cfg.githubAppPrivateKey],
+  ].filter(([, value]) => !value).map(([key]) => key)
+  if (missing.length > 0) throw new Error(`GitHub App is not configured. Missing: ${missing.join(', ')}`)
   const now = Math.floor(Date.now() / 1000)
   return jwt.sign(
     { iat: now - 60, exp: now + 9 * 60, iss: cfg.githubAppId },

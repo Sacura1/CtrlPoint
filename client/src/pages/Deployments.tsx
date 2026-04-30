@@ -49,11 +49,11 @@ export default function Deployments() {
     loadAll().finally(() => setLoading(false))
   }, [loadAll])
 
-  // Poll every 3s if any deployment is active
+  // Poll in the background so GitHub webhook deployments appear without manual refresh.
+  // Poll faster while a deployment is active.
   useEffect(() => {
     const hasActive = Object.values(deployMap).flat().some(d => isActive(d.status))
-    if (!hasActive) return
-    const iv = setInterval(loadAll, 3000)
+    const iv = setInterval(loadAll, hasActive ? 3000 : 10000)
     return () => clearInterval(iv)
   }, [deployMap, loadAll])
 
