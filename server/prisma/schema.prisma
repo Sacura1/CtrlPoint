@@ -87,8 +87,10 @@ model GitHubConnection {
   repoName         String
   branch           String   @default("main")
   projectType      String   @default("static")
+  projectRoot      String   @default("")
   buildCommand     String   @default("npm run build")
   outputDir        String   @default("dist")
+  buildEnv         String?
   lastDeployedSha  String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt

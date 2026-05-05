@@ -12,7 +12,7 @@ export default function GitHub() {
   const [loadingRepos, setLoadingRepos] = useState(false)
   const [connectForm, setConnectForm] = useState<{
     siteId: string; repoOwner: string; repoName: string; githubInstallationId?: string; branch: string
-    projectType: string; buildCommand: string; outputDir: string
+    projectType: string; projectRoot: string; buildCommand: string; outputDir: string; buildEnv: string
   } | null>(null)
   const [connecting, setConnecting] = useState(false)
   const [connectMsg, setConnectMsg] = useState<{ ok: boolean; text: string } | null>(null)
@@ -59,7 +59,7 @@ export default function GitHub() {
       setConnectMsg({ ok: false, text: 'This site has claimed ownership. Auto-deploy is disabled because CtrlPoint no longer controls its MNS record.' })
       return
     }
-    setConnectForm({ siteId, repoOwner: '', repoName: '', githubInstallationId: undefined, branch: 'main', projectType: 'static', buildCommand: 'npm run build', outputDir: 'dist' })
+    setConnectForm({ siteId, repoOwner: '', repoName: '', githubInstallationId: undefined, branch: 'main', projectType: 'static', projectRoot: '', buildCommand: 'npm run build', outputDir: 'dist', buildEnv: '' })
     setConnectMsg(null)
     if (repos.length === 0) loadRepos()
   }
@@ -301,16 +301,30 @@ export default function GitHub() {
                   </div>
 
                   {connectForm.projectType === 'framework' && (
-                    <div className="grid grid-cols-2 gap-2 mb-4 animate-fade-in">
+                    <div className="space-y-3 mb-4 animate-fade-in">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-xs mb-1.5 block" style={{ color: 'rgba(255,255,255,0.35)' }}>Project root</label>
+                          <input className="input text-sm w-full font-mono" value={connectForm.projectRoot}
+                            onChange={e => setConnectForm(f => f ? { ...f, projectRoot: e.target.value.replace(/^\/+/, '') } : f)} placeholder="client" />
+                        </div>
+                        <div>
+                          <label className="text-xs mb-1.5 block" style={{ color: 'rgba(255,255,255,0.35)' }}>Output dir</label>
+                          <input className="input text-sm w-full font-mono" value={connectForm.outputDir}
+                            onChange={e => setConnectForm(f => f ? { ...f, outputDir: e.target.value.replace(/^\/+/, '') } : f)} placeholder="dist" />
+                        </div>
+                      </div>
                       <div>
                         <label className="text-xs mb-1.5 block" style={{ color: 'rgba(255,255,255,0.35)' }}>Build command</label>
                         <input className="input text-sm w-full font-mono" value={connectForm.buildCommand}
                           onChange={e => setConnectForm(f => f ? { ...f, buildCommand: e.target.value } : f)} placeholder="npm run build" />
                       </div>
                       <div>
-                        <label className="text-xs mb-1.5 block" style={{ color: 'rgba(255,255,255,0.35)' }}>Output dir</label>
-                        <input className="input text-sm w-full font-mono" value={connectForm.outputDir}
-                          onChange={e => setConnectForm(f => f ? { ...f, outputDir: e.target.value } : f)} placeholder="dist" />
+                        <label className="text-xs mb-1.5 block" style={{ color: 'rgba(255,255,255,0.35)' }}>Build env</label>
+                        <textarea className="input text-sm w-full font-mono resize-none leading-relaxed" rows={3}
+                          value={connectForm.buildEnv}
+                          onChange={e => setConnectForm(f => f ? { ...f, buildEnv: e.target.value } : f)}
+                          placeholder={'VITE_API_URL=https://api.example.com\nVITE_GOOGLE_CLIENT_ID=...'} />
                       </div>
                     </div>
                   )}

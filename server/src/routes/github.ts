@@ -264,8 +264,10 @@ router.get('/connection/:siteId', requireAuth, async (req: AuthRequest, res: Res
         repoName: true,
         branch: true,
         projectType: true,
+        projectRoot: true,
         buildCommand: true,
         outputDir: true,
+        buildEnv: true,
         lastDeployedSha: true,
       },
     })
@@ -293,7 +295,7 @@ router.delete('/account', requireAuth, async (req: AuthRequest, res: Response, n
 
 router.post('/deploy-new', requireAuth, async (req: AuthRequest, res: Response, next) => {
   try {
-    const { mnsName, repoOwner, repoName, branch, projectType, buildCommand, outputDir, githubInstallationId } = req.body
+    const { mnsName, repoOwner, repoName, branch, projectType, projectRoot, buildCommand, outputDir, buildEnv, githubInstallationId } = req.body
 
     if (!mnsName || !repoOwner || !repoName) throw new AppError(400, 'mnsName, repoOwner and repoName are required.')
     if (!/^[a-z0-9-]{3,32}$/.test(mnsName)) throw new AppError(400, 'MNS name must be 3-32 lowercase letters, numbers or hyphens.')
@@ -335,8 +337,10 @@ router.post('/deploy-new', requireAuth, async (req: AuthRequest, res: Response, 
         repoName,
         branch: branchName,
         projectType: projectType || 'static',
+        projectRoot: projectRoot || '',
         buildCommand: buildCommand || 'npm run build',
         outputDir: outputDir || 'dist',
+        buildEnv: buildEnv || null,
       },
     })
 
@@ -357,7 +361,7 @@ router.post('/deploy-new', requireAuth, async (req: AuthRequest, res: Response, 
 
 router.post('/connect', requireAuth, async (req: AuthRequest, res: Response, next) => {
   try {
-    const { siteId, repoOwner, repoName, branch, projectType, buildCommand, outputDir, githubInstallationId } = req.body
+    const { siteId, repoOwner, repoName, branch, projectType, projectRoot, buildCommand, outputDir, buildEnv, githubInstallationId } = req.body
 
     if (!siteId || !repoOwner || !repoName) throw new AppError(400, 'siteId, repoOwner, repoName are required.')
 
@@ -381,8 +385,10 @@ router.post('/connect', requireAuth, async (req: AuthRequest, res: Response, nex
         repoName,
         branch: branch || 'main',
         projectType: projectType || 'static',
+        projectRoot: projectRoot || '',
         buildCommand: buildCommand || 'npm run build',
         outputDir: outputDir || 'dist',
+        buildEnv: buildEnv || null,
       },
       update: {
         githubInstallationId: installationId,
@@ -390,8 +396,10 @@ router.post('/connect', requireAuth, async (req: AuthRequest, res: Response, nex
         repoName,
         branch: branch || 'main',
         projectType: projectType || 'static',
+        projectRoot: projectRoot || '',
         buildCommand: buildCommand || 'npm run build',
         outputDir: outputDir || 'dist',
+        buildEnv: buildEnv || null,
       },
     })
 

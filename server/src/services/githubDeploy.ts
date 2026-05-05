@@ -104,13 +104,41 @@ async function detectPackageManager(repoDir: string): Promise<PackageManager> {
   return 'npm'
 }
 
-async function runCommand(command: string, args: string[], cwd: string, timeout: number) {
+async function runCommand(command: string, args: string[], cwd: string, timeout: number, env?: NodeJS.ProcessEnv) {
   try {
-    return await exec(command, args, { cwd, timeout })
+    return await exec(command, args, { cwd, timeout, env: { ...process.env, ...(env || {}) } })
   } catch (err: any) {
     const detail = String(err?.stderr || err?.stdout || err?.message || '').trim()
     throw new Error(detail.slice(0, 900) || `${command} ${args.join(' ')} failed.`)
   }
+}
+
+function safeSubPath(value: string | undefined, fieldName: string): string {
+  const normalized = (value || '').trim().replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/+$/, '')
+  if (!normalized) return ''
+  const parts = normalized.split('/')
+  if (parts.some(part => !part || part === '.' || part === '..')) {
+    throw new Error(`${fieldName} must be a relative path inside the repository.`)
+  }
+  return normalized
+}
+
+function parseBuildEnv(raw: string | null | undefined): NodeJS.ProcessEnv {
+  if (!raw?.trim()) return {}
+  const env: NodeJS.ProcessEnv = {}
+
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith('#')) continue
+    const eq = trimmed.indexOf('=')
+    if (eq <= 0) throw new Error(`Invalid build env line "${trimmed}". Use KEY=value.`)
+    const key = trimmed.slice(0, eq).trim()
+    const value = trimmed.slice(eq + 1).trim()
+    if (!/^[A-Z_][A-Z0-9_]*$/i.test(key)) throw new Error(`Invalid build env key "${key}".`)
+    env[key] = value
+  }
+
+  return env
 }
 
 async function ensureCorepack(repoDir: string, pm: PackageManager) {
@@ -151,10 +179,10 @@ function normalizeBuildCommand(buildCommand: string, pm: PackageManager): string
   return trimmed.split(/\s+/)
 }
 
-async function runBuild(repoDir: string, buildCommand: string, pm: PackageManager, label: string) {
+async function runBuild(repoDir: string, buildCommand: string, pm: PackageManager, label: string, env: NodeJS.ProcessEnv) {
   const [cmd, ...args] = normalizeBuildCommand(buildCommand, pm)
   log(label, `Running build command: ${[cmd, ...args].join(' ')}`)
-  await runCommand(cmd, args, repoDir, 420_000)
+  await runCommand(cmd, args, repoDir, 420_000, env)
 }
 
 async function resolveBuildDir(repoDir: string, configuredOutputDir: string): Promise<string> {
@@ -183,7 +211,7 @@ async function explainMissingIndex(repoDir: string, outputDir: string): Promise<
 }
 
 export async function deployGitHubSite(connection: any, sha: string, deploymentId: string) {
-  const { site, user, repoOwner, repoName, branch, projectType, buildCommand, outputDir, githubInstallationId } = connection
+  const { site, user, repoOwner, repoName, branch, projectType, projectRoot, buildCommand, outputDir, buildEnv, githubInstallationId } = connection
   const label = `${repoOwner}/${repoName}`
   const isInitialDeploy = !site.scAddress
 
@@ -233,12 +261,23 @@ export async function deployGitHubSite(connection: any, sha: string, deploymentI
       const cloneUrl = `https://x-access-token:${token}@github.com/${repoOwner}/${repoName}.git`
       await runCommand('git', ['clone', '--depth=1', `--branch=${branch}`, cloneUrl, tmpDir], process.cwd(), 120_000)
 
-      const pm = await installDependencies(tmpDir, label)
-      await runBuild(tmpDir, buildCommand, pm, label)
+      const root = safeSubPath(projectRoot, 'Project root')
+      const buildCwd = root ? path.join(tmpDir, root) : tmpDir
+      const rootPackage = path.join(buildCwd, 'package.json')
+      if (!await fileExists(rootPackage)) {
+        throw new Error(`Project root "${root || '.'}" does not contain package.json.`)
+      }
+      const buildEnvVars = parseBuildEnv(buildEnv)
+      const envCount = Object.keys(buildEnvVars).length
+      log(label, `Using project root: ${root || '.'}${envCount ? ` with ${envCount} build env var(s)` : ''}`)
 
-      const buildDir = await resolveBuildDir(tmpDir, outputDir)
+      const pm = await installDependencies(buildCwd, label)
+      await runBuild(buildCwd, buildCommand, pm, label, buildEnvVars)
+
+      const output = safeSubPath(outputDir || 'dist', 'Output dir') || 'dist'
+      const buildDir = await resolveBuildDir(buildCwd, output)
       const indexExists = await fileExists(path.join(buildDir, 'index.html'))
-      if (!indexExists) throw new Error(await explainMissingIndex(tmpDir, outputDir))
+      if (!indexExists) throw new Error(await explainMissingIndex(buildCwd, output))
 
       log(label, `Uploading ${buildDir} to DeWeb...`)
       await prisma.deployment.update({ where: { id: deploymentId }, data: { status: 'UPLOADING', step: 'Uploading build output to DeWeb...' } })

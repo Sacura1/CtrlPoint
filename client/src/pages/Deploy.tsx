@@ -14,8 +14,10 @@ interface GitHubForm {
   githubInstallationId?: string
   branch: string
   projectType: string
+  projectRoot: string
   buildCommand: string
   outputDir: string
+  buildEnv: string
 }
 
 export default function Deploy() {
@@ -29,7 +31,7 @@ export default function Deploy() {
   const [loadingRepos, setLoadingRepos] = useState(false)
   const [form, setForm] = useState<GitHubForm>({
     mnsName: '', repoOwner: '', repoName: '', githubInstallationId: undefined, branch: 'main',
-    projectType: 'static', buildCommand: 'npm run build', outputDir: 'dist',
+    projectType: 'static', projectRoot: '', buildCommand: 'npm run build', outputDir: 'dist', buildEnv: '',
   })
   const [mnsStatus, setMnsStatus] = useState<'idle' | 'checking' | 'available' | 'taken'>('idle')
   const [deploying, setDeploying] = useState(false)
@@ -289,16 +291,35 @@ export default function Deploy() {
 
                   {/* Build options */}
                   {form.projectType === 'framework' && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 animate-fade-in">
+                    <div className="space-y-3 animate-fade-in">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <FieldLabel label="Project Root" tip="The folder that contains package.json. Leave blank for repo root. For a monorepo like CtrlPoint, use 'client'." />
+                          <input className="input text-sm w-full font-mono" value={form.projectRoot}
+                            onChange={e => setField('projectRoot', e.target.value.replace(/^\/+/, ''))} placeholder="client" />
+                        </div>
+                        <div>
+                          <FieldLabel label="Output Dir" tip="The build output folder relative to Project Root. Vite uses 'dist', Create React App uses 'build', static Next.js uses 'out'. Must contain index.html." />
+                          <input className="input text-sm w-full font-mono" value={form.outputDir}
+                            onChange={e => setField('outputDir', e.target.value.replace(/^\/+/, ''))} placeholder="dist" />
+                        </div>
+                      </div>
                       <div>
                         <FieldLabel label="Build Command" tip="The command that compiles your project. For most React/Vite apps: 'npm run build'. For Next.js static export: 'npm run build && npm run export'." />
                         <input className="input text-sm w-full font-mono" value={form.buildCommand}
                           onChange={e => setField('buildCommand', e.target.value)} placeholder="npm run build" />
                       </div>
-                      <div>
+                      <div className="hidden">
                         <FieldLabel label="Output Dir" tip="The folder your build writes into. Vite → 'dist', Create React App → 'build', Next.js static → 'out'. Must contain an index.html file." />
                         <input className="input text-sm w-full font-mono" value={form.outputDir}
                           onChange={e => setField('outputDir', e.target.value)} placeholder="dist" />
+                      </div>
+                      <div>
+                        <FieldLabel label="Build Env" tip="Optional KEY=value lines available during build. Use this for Vite variables like VITE_API_URL. Do not put secrets here because frontend build variables are public." />
+                        <textarea className="input text-sm w-full font-mono resize-none leading-relaxed" rows={3}
+                          value={form.buildEnv}
+                          onChange={e => setField('buildEnv', e.target.value)}
+                          placeholder={'VITE_API_URL=https://api.example.com\nVITE_GOOGLE_CLIENT_ID=...'} />
                       </div>
                     </div>
                   )}
