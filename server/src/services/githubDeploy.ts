@@ -182,7 +182,7 @@ async function explainMissingIndex(repoDir: string, outputDir: string): Promise<
   return `Build finished, but "${outputDir}/index.html" was not found. Set Output Dir to the folder your build creates, commonly "dist" for Vite, "build" for Create React App, or "out" for static Next.js export.`
 }
 
-export async function deployGitHubSite(connection: any, sha: string) {
+export async function deployGitHubSite(connection: any, sha: string, deploymentId: string) {
   const { site, user, repoOwner, repoName, branch, projectType, buildCommand, outputDir, githubInstallationId } = connection
   const label = `${repoOwner}/${repoName}`
   const isInitialDeploy = !site.scAddress
@@ -194,23 +194,15 @@ export async function deployGitHubSite(connection: any, sha: string) {
 
   const token = await createInstallationToken(githubInstallationId)
 
-  // Create deployment record for activity feed
-  const deployment = await prisma.deployment.create({
-    data: {
-      siteId: site.id,
-      type: isInitialDeploy ? 'INITIAL' : 'UPDATE',
-      status: 'UPLOADING',
-      source: isInitialDeploy ? 'github_new' : 'github_push',
-      commitSha: sha !== 'initial' ? sha.slice(0, 7) : undefined,
-      step: 'Uploading to Massa chain...',
-    },
-  })
-
   await prisma.site.update({ where: { id: site.id }, data: { status: isInitialDeploy ? 'DEPLOYING' : 'UPDATING' } })
 
   let tmpDir: string | null = null
   try {
     if (projectType === 'static') {
+      await prisma.deployment.update({
+        where: { id: deploymentId },
+        data: { status: 'UPLOADING', step: 'Fetching static site from GitHub...' },
+      })
       // Fetch index.html then inline any linked CSS/JS so the site is self-contained
       log(label, 'Fetching index.html from GitHub...')
       const fileData = await githubFetch(
@@ -223,10 +215,17 @@ export async function deployGitHubSite(connection: any, sha: string) {
       const html = await inlineGithubAssets(rawHtml, repoOwner, repoName, branch, token)
 
       const { scAddress } = await uploadSite(html, site.title, site.description, site.scAddress || undefined,
-        (s) => log(label, s))
+        (s) => {
+          log(label, s)
+          prisma.deployment.update({ where: { id: deploymentId }, data: { status: 'UPLOADING', step: s, updatedAt: new Date() } }).catch(() => {})
+        })
 
-      await finalizeDeploy(site, scAddress, sha, html, deployment.id)
+      await finalizeDeploy(site, scAddress, sha, html, deploymentId)
     } else {
+      await prisma.deployment.update({
+        where: { id: deploymentId },
+        data: { status: 'BUILDING', step: 'Building project...' },
+      })
       // Framework build: clone -> install -> build -> upload
       tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ctrlpoint-gh-'))
       log(label, `Cloning ${repoOwner}/${repoName}@${branch} into ${tmpDir}...`)
@@ -242,18 +241,22 @@ export async function deployGitHubSite(connection: any, sha: string) {
       if (!indexExists) throw new Error(await explainMissingIndex(tmpDir, outputDir))
 
       log(label, `Uploading ${buildDir} to DeWeb...`)
+      await prisma.deployment.update({ where: { id: deploymentId }, data: { status: 'UPLOADING', step: 'Uploading build output to DeWeb...' } })
       const { scAddress } = await uploadDirectory(buildDir, site.title, site.description, site.scAddress || undefined,
-        (s) => log(label, s))
+        (s) => {
+          log(label, s)
+          prisma.deployment.update({ where: { id: deploymentId }, data: { status: 'UPLOADING', step: s, updatedAt: new Date() } }).catch(() => {})
+        })
 
-      await finalizeDeploy(site, scAddress, sha, undefined, deployment.id)
+      await finalizeDeploy(site, scAddress, sha, undefined, deploymentId)
     }
 
     log(label, 'Deploy complete')
-    await prisma.deployment.update({ where: { id: deployment.id }, data: { status: 'COMPLETE', step: 'Live!' } })
+    await prisma.deployment.update({ where: { id: deploymentId }, data: { status: 'COMPLETE', step: 'Live!' } })
   } catch (err: any) {
     log(label, `Deploy failed: ${err.message}`)
     await prisma.site.update({ where: { id: site.id }, data: { status: 'ERROR' } }).catch(() => {})
-    await prisma.deployment.update({ where: { id: deployment.id }, data: { status: 'FAILED', step: 'Failed', errorMsg: err.message } }).catch(() => {})
+    await prisma.deployment.update({ where: { id: deploymentId }, data: { status: 'FAILED', step: 'Failed', errorMsg: err.message } }).catch(() => {})
     throw err
   } finally {
     if (tmpDir) await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {})

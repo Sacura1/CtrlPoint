@@ -10,7 +10,7 @@ export interface AuthRequest extends Request {
 }
 
 export type SiteStatus = 'DRAFT' | 'DEPLOYING' | 'LIVE' | 'ERROR' | 'UPDATING'
-export type DeploymentStatus = 'QUEUED' | 'UPLOADING' | 'MNS_REGISTERING' | 'COMPLETE' | 'FAILED'
+export type DeploymentStatus = 'QUEUED' | 'BUILDING' | 'UPLOADING' | 'MNS_REGISTERING' | 'COMPLETE' | 'FAILED'
 export type DeploymentType = 'INITIAL' | 'UPDATE'
 
 export interface DeployJob {

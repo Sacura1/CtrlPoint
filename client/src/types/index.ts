@@ -16,6 +16,9 @@ export interface Site {
   updatedAt: string
   lastPrompt: string | null
   needsDeploy: boolean
+  ownershipClaimed: boolean
+  ownershipClaimedAt?: string | null
+  ownershipClaimedTo?: string | null
   generatedCode?: string
   previousCode?: string | null
 }
@@ -34,7 +37,7 @@ export interface SiteDeployment {
 }
 
 export interface DeployStatus {
-  status: 'QUEUED' | 'UPLOADING' | 'MNS_REGISTERING' | 'COMPLETE' | 'FAILED'
+  status: 'QUEUED' | 'BUILDING' | 'UPLOADING' | 'MNS_REGISTERING' | 'COMPLETE' | 'FAILED'
   step: string
   scAddress?: string
   error?: string

@@ -8,6 +8,20 @@ import { transferMnsOwnership } from '../services/mns'
 const router = Router()
 const prisma = new PrismaClient()
 
+function validateMnsName(mnsName: string) {
+  if (!/^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$/.test(mnsName))
+    throw new AppError(400, 'Invalid site name. Use only lowercase letters, numbers, and hyphens.')
+  if (mnsName.length < 2 || mnsName.length > 100)
+    throw new AppError(400, 'Site name must be 2-100 characters.')
+}
+
+async function assertMnsNameAvailable(mnsName: string, excludeSiteId?: string) {
+  const existing = await prisma.site.findUnique({ where: { mnsName } })
+  if (existing && existing.id !== excludeSiteId) {
+    throw new AppError(409, `The name "${mnsName}" is already taken. Choose a different name.`)
+  }
+}
+
 // List all sites for user
 router.get('/', requireAuth, async (req: AuthRequest, res: Response, next) => {
   try {
@@ -18,6 +32,7 @@ router.get('/', requireAuth, async (req: AuthRequest, res: Response, next) => {
         id: true, mnsName: true, scAddress: true, status: true,
         title: true, description: true, createdAt: true, updatedAt: true,
         lastPrompt: true, needsDeploy: true,
+        ownershipClaimed: true, ownershipClaimedAt: true, ownershipClaimedTo: true,
       },
     })
     res.json({ sites })
@@ -66,6 +81,34 @@ router.post('/', requireAuth, async (req: AuthRequest, res: Response, next) => {
   } catch (err) { next(err) }
 })
 
+// Update an undeployed draft before first deployment
+router.patch('/:siteId', requireAuth, async (req: AuthRequest, res: Response, next) => {
+  try {
+    const site = await prisma.site.findUnique({ where: { id: req.params.siteId as string } })
+    if (!site) throw new AppError(404, 'Site not found.')
+    if (site.userId !== req.user!.userId) throw new AppError(403, 'Access denied.')
+    if (site.scAddress || site.status === 'LIVE' || site.status === 'DEPLOYING' || site.status === 'UPDATING') {
+      throw new AppError(409, 'Only undeployed drafts can be renamed here.')
+    }
+
+    const { mnsName, generatedCode, title, description, lastPrompt } = req.body
+    const data: Record<string, any> = {}
+
+    if (typeof mnsName === 'string' && mnsName !== site.mnsName) {
+      validateMnsName(mnsName)
+      await assertMnsNameAvailable(mnsName, site.id)
+      data.mnsName = mnsName
+    }
+    if (typeof generatedCode === 'string' && generatedCode.trim()) data.generatedCode = generatedCode
+    if (typeof title === 'string') data.title = title || 'My Site'
+    if (typeof description === 'string') data.description = description
+    if (typeof lastPrompt === 'string') data.lastPrompt = lastPrompt
+
+    const updated = await prisma.site.update({ where: { id: site.id }, data })
+    res.json({ site: updated })
+  } catch (err) { next(err) }
+})
+
 // Delete a draft site (cannot delete live sites without warning)
 router.delete('/:siteId', requireAuth, async (req: AuthRequest, res: Response, next) => {
   try {
@@ -104,12 +147,21 @@ router.post('/:siteId/transfer-ownership', requireAuth, async (req: AuthRequest,
     if (!site) throw new AppError(404, 'Site not found.')
     if (site.userId !== req.user!.userId) throw new AppError(403, 'Access denied.')
     if (site.status !== 'LIVE') throw new AppError(400, 'Site must be live before transferring ownership.')
+    if (site.ownershipClaimed) throw new AppError(409, 'Ownership has already been claimed for this site.')
 
     const user = await prisma.user.findUnique({ where: { id: req.user!.userId } })
     if (!user?.massaAddress) throw new AppError(400, 'Please add your Massa wallet address in settings before transferring ownership.')
 
     await transferMnsOwnership(site.mnsName, user.massaAddress)
-    res.json({ ok: true, message: `MNS ownership transferred to ${user.massaAddress}` })
+    const updatedSite = await prisma.site.update({
+      where: { id: site.id },
+      data: {
+        ownershipClaimed: true,
+        ownershipClaimedAt: new Date(),
+        ownershipClaimedTo: user.massaAddress,
+      },
+    })
+    res.json({ ok: true, site: updatedSite, message: `MNS ownership transferred to ${user.massaAddress}` })
   } catch (err) { next(err) }
 })
 

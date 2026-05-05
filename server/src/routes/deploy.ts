@@ -4,7 +4,6 @@ import { v4 as uuidv4 } from 'uuid'
 import { requireAuth } from '../middleware/auth'
 import { AppError } from '../middleware/errorHandler'
 import { AuthRequest } from '../types'
-import { queueDeploy, getJob } from '../services/deployQueue'
 import { checkMnsAvailable } from '../services/mns'
 import { cfg } from '../config'
 
@@ -35,10 +34,13 @@ router.post('/', requireAuth, async (req: AuthRequest, res: Response, next) => {
     const site = await prisma.site.findUnique({ where: { id: siteId } })
     if (!site) throw new AppError(404, 'Site not found.')
     if (site.userId !== req.user!.userId) throw new AppError(403, 'Access denied.')
+    if (site.ownershipClaimed) {
+      throw new AppError(409, 'You already claimed ownership for this site. CtrlPoint no longer controls its MNS record, so platform updates are disabled.')
+    }
     if (site.status === 'DEPLOYING' || site.status === 'UPDATING') {
       // Check if a real active job exists in memory — if not, the deployment is stuck
       const activeDeployment = await prisma.deployment.findFirst({
-        where: { siteId, status: { in: ['QUEUED', 'UPLOADING', 'MNS_REGISTERING'] } },
+        where: { siteId, status: { in: ['QUEUED', 'BUILDING', 'UPLOADING', 'MNS_REGISTERING'] } },
         orderBy: { createdAt: 'desc' },
       })
       const isStuck = !activeDeployment ||
@@ -80,18 +82,6 @@ router.post('/', requireAuth, async (req: AuthRequest, res: Response, next) => {
       },
     })
 
-    // Queue the job (runs async)
-    await queueDeploy({
-      deploymentId,
-      siteId,
-      mnsName: site.mnsName,
-      html: site.generatedCode,
-      title: site.title,
-      description: site.description,
-      existingScAddress: isUpdate ? site.scAddress ?? undefined : undefined,
-      isUpdate,
-    })
-
     res.status(202).json({
       deploymentId,
       message: isUpdate ? 'Update started.' : 'Deployment started.',
@@ -104,20 +94,6 @@ router.get('/status/:deploymentId', requireAuth, async (req: AuthRequest, res: R
   try {
     const deploymentId = req.params.deploymentId as string
 
-    // Check in-memory job first (fastest path)
-    const job = getJob(deploymentId)
-    if (job) {
-      const site = await prisma.site.findUnique({ where: { id: job.siteId }, select: { mnsName: true } })
-      return res.json({
-        status: job.status,
-        step: job.step,
-        scAddress: job.scAddress,
-        error: job.error,
-        url: job.status === 'COMPLETE' && site?.mnsName ? mnsUrl(site.mnsName) : null,
-      })
-    }
-
-    // Fall back to DB for completed/old jobs
     const deployment = await prisma.deployment.findUnique({
       where: { id: deploymentId as string },
       include: { site: { select: { mnsName: true, userId: true } } },
@@ -127,7 +103,7 @@ router.get('/status/:deploymentId', requireAuth, async (req: AuthRequest, res: R
 
     res.json({
       status: deployment.status,
-      step: deployment.status,
+      step: deployment.step || deployment.status,
       scAddress: deployment.scAddress,
       error: deployment.errorMsg,
       url: deployment.status === 'COMPLETE' ? mnsUrl(deployment.site.mnsName) : null,

@@ -72,6 +72,12 @@ export default function Header() {
             }}>
               <span className="font-bold tabular-nums" style={{ color: '#a78bfa', fontSize: '14px' }}>{user?.credits ?? 0}</span>
               <span className="hidden sm:inline text-xs font-medium" style={{ color: 'rgba(167,139,250,0.7)' }}>credits</span>
+              <Link to="/credits"
+                className="ml-1 flex h-5 w-5 items-center justify-center rounded-lg text-xs font-bold transition-all"
+                style={{ background: 'rgba(167,139,250,0.16)', color: '#c4b5fd', border: '1px solid rgba(167,139,250,0.22)' }}
+                aria-label="Top up credits">
+                +
+              </Link>
             </div>
 
             {/* Mobile quick-nav buttons */}

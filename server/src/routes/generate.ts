@@ -3,9 +3,10 @@ import { PrismaClient } from '@prisma/client'
 import { requireAuth } from '../middleware/auth'
 import { AppError } from '../middleware/errorHandler'
 import { AuthRequest } from '../types'
-import { chat, updateSiteChat, ChatMessage, isAllowedModel, AllowedModel, UserKeys } from '../services/ai'
+import { chat, updateSiteChat, ChatMessage, isAllowedModel, AllowedModel, UserKeys, isReasoningEffort, ReasoningEffort } from '../services/ai'
 import { cfg } from '../config'
 import { decrypt } from '../utils/encryption'
+import { applyDailyFreeCredits, creditCostForModel } from '../services/credits'
 
 const router = Router()
 const prisma = new PrismaClient()
@@ -16,6 +17,11 @@ function resolveModel(body: any): AllowedModel | undefined {
   return isAllowedModel(m) ? m : undefined
 }
 
+function resolveReasoningEffort(body: any): ReasoningEffort | undefined {
+  if (!cfg.enableModelSelection) return undefined
+  return isReasoningEffort(body?.reasoningEffort) ? body.reasoningEffort : undefined
+}
+
 async function resolveUserKeys(userId: string): Promise<UserKeys> {
   const rows = await prisma.userApiKey.findMany({ where: { userId } })
   const keys: UserKeys = {}
@@ -24,9 +30,15 @@ async function resolveUserKeys(userId: string): Promise<UserKeys> {
       const plain = decrypt(row.encryptedKey, row.iv)
       if (row.provider === 'openai') keys.openaiKey = plain
       else if (row.provider === 'anthropic') keys.anthropicKey = plain
-    } catch {}
+    } catch {
+      throw new AppError(409, `Your saved ${row.provider === 'openai' ? 'OpenAI' : 'Anthropic'} API key could not be read. Remove it in API Keys settings and add it again.`)
+    }
   }
   return keys
+}
+
+function hasUserKeyForProvider(userKeys: UserKeys, provider: 'openai' | 'anthropic'): boolean {
+  return provider === 'openai' ? !!userKeys.openaiKey : !!userKeys.anthropicKey
 }
 
 function selectedProvider(model: AllowedModel | undefined): 'openai' | 'anthropic' {
@@ -34,21 +46,21 @@ function selectedProvider(model: AllowedModel | undefined): 'openai' | 'anthropi
   return cfg.aiProvider === 'openai' ? 'openai' : 'anthropic'
 }
 
-function hasUserKeyForProvider(userKeys: UserKeys, provider: 'openai' | 'anthropic'): boolean {
-  return provider === 'openai' ? !!userKeys.openaiKey : !!userKeys.anthropicKey
+function effectiveModel(model: AllowedModel | undefined): string {
+  if (model) return model
+  return selectedProvider(model) === 'openai' ? cfg.openaiModel : cfg.anthropicModel
 }
 
-async function chargeAiCredit(userId: string, type: 'generate' | 'edit', note: string) {
-  const cost = cfg.credits.generate
-  if (cost <= 0) return
+async function chargeAiCredit(userId: string, type: 'generate' | 'edit', note: string, cost: number): Promise<number> {
+  if (cost <= 0) return (await applyDailyFreeCredits(prisma, userId))?.credits ?? 0
 
-  const user = await prisma.user.findUnique({ where: { id: userId }, select: { credits: true } })
+  const user = await applyDailyFreeCredits(prisma, userId)
   if (!user) throw new AppError(404, 'User not found.')
   if (user.credits < cost) {
     throw new AppError(402, `Insufficient credits. AI ${type} costs ${cost} credit(s). You have ${user.credits}.`)
   }
 
-  await prisma.user.update({
+  const updatedUser = await prisma.user.update({
     where: { id: userId },
     data: { credits: { decrement: cost } },
   })
@@ -57,9 +69,20 @@ async function chargeAiCredit(userId: string, type: 'generate' | 'edit', note: s
       userId,
       amount: -cost,
       type,
-      note,
+      note: `${note} (${cost} credit${cost === 1 ? '' : 's'})`,
     },
   })
+  return updatedUser.credits
+}
+
+async function ensurePlatformAiCredits(userId: string, type: 'generate' | 'edit', cost: number, usesUserKey: boolean): Promise<number> {
+  const user = await applyDailyFreeCredits(prisma, userId)
+  if (!user) throw new AppError(404, 'User not found.')
+  if (usesUserKey) return user.credits
+  if (cost > 0 && user.credits < cost) {
+    throw new AppError(402, `Insufficient credits. AI ${type} costs ${cost} credit(s). You have ${user.credits}.`)
+  }
+  return user.credits
 }
 
 // Chat with agent (new site or existing)
@@ -75,17 +98,27 @@ router.post('/', requireAuth, async (req: AuthRequest, res: Response, next) => {
     if (last.content.length > 2000) throw new AppError(400, 'Message too long (max 2000 chars).')
 
     const model = resolveModel(req.body)
+    const reasoningEffort = resolveReasoningEffort(req.body)
+    const modelName = effectiveModel(model)
+    const creditCost = creditCostForModel(modelName)
     const userKeys = await resolveUserKeys(req.user!.userId)
+    const usesUserKey = hasUserKeyForProvider(userKeys, selectedProvider(model))
+    let remainingCredits = await ensurePlatformAiCredits(req.user!.userId, currentHtml ? 'edit' : 'generate', creditCost, usesUserKey)
     // If caller provides existing HTML (e.g. uploaded file), edit it rather than generate from scratch
     const response = currentHtml
-      ? await updateSiteChat(currentHtml, history as ChatMessage[], model, userKeys)
-      : await chat(history as ChatMessage[], model, userKeys)
+      ? await updateSiteChat(currentHtml, history as ChatMessage[], model, userKeys, reasoningEffort)
+      : await chat(history as ChatMessage[], model, userKeys, reasoningEffort)
 
-    if (response.type === 'site' && !hasUserKeyForProvider(userKeys, selectedProvider(model))) {
-      await chargeAiCredit(req.user!.userId, currentHtml ? 'edit' : 'generate', currentHtml ? 'AI edit uploaded site' : 'AI site generation')
+    if (response.type === 'site' && !usesUserKey) {
+      remainingCredits = await chargeAiCredit(
+        req.user!.userId,
+        currentHtml ? 'edit' : 'generate',
+        currentHtml ? `AI edit uploaded site with ${modelName}${reasoningEffort ? ` (${reasoningEffort} reasoning)` : ''}` : `AI site generation with ${modelName}${reasoningEffort ? ` (${reasoningEffort} reasoning)` : ''}`,
+        creditCost
+      )
     }
 
-    res.json(response)
+    res.json({ ...response, credits: remainingCredits })
   } catch (err) { next(err) }
 })
 
@@ -105,13 +138,23 @@ router.post('/update/:siteId', requireAuth, async (req: AuthRequest, res: Respon
       throw new AppError(409, 'Site is currently deploying. Wait for it to finish.')
 
     const model = resolveModel(req.body)
+    const reasoningEffort = resolveReasoningEffort(req.body)
+    const modelName = effectiveModel(model)
+    const creditCost = creditCostForModel(modelName)
     const userKeys = await resolveUserKeys(req.user!.userId)
-    const response = await updateSiteChat(site.generatedCode, history as ChatMessage[], model, userKeys)
+    const usesUserKey = hasUserKeyForProvider(userKeys, selectedProvider(model))
+    let remainingCredits = await ensurePlatformAiCredits(req.user!.userId, 'edit', creditCost, usesUserKey)
+    const response = await updateSiteChat(site.generatedCode, history as ChatMessage[], model, userKeys, reasoningEffort)
 
     // If AI generated new HTML, save it
     if (response.type === 'site') {
-      if (!hasUserKeyForProvider(userKeys, selectedProvider(model))) {
-        await chargeAiCredit(req.user!.userId, 'edit', `AI edit ${site.mnsName}`)
+      if (!usesUserKey) {
+        remainingCredits = await chargeAiCredit(
+          req.user!.userId,
+          'edit',
+          `AI edit ${site.mnsName} with ${modelName}${reasoningEffort ? ` (${reasoningEffort} reasoning)` : ''}`,
+          creditCost
+        )
       }
 
       await prisma.site.update({
@@ -127,7 +170,7 @@ router.post('/update/:siteId', requireAuth, async (req: AuthRequest, res: Respon
       })
     }
 
-    res.json(response)
+    res.json({ ...response, credits: remainingCredits })
   } catch (err) { next(err) }
 })
 

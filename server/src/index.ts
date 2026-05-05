@@ -15,6 +15,8 @@ import billingRoutes from './routes/billing'
 import keysRoutes from './routes/keys'
 import uploadRoutes from './routes/upload'
 import githubRoutes from './routes/github'
+import { startDeployWorker } from './services/deployWorker'
+import { CLAUDE_REASONING_EFFORTS, MODEL_CATALOG, OPENAI_REASONING_EFFORTS } from './services/ai'
 
 validateConfig()
 
@@ -43,6 +45,17 @@ app.use('/api/github/webhook', express.raw({ type: 'application/json' }))
 app.use(express.json({ limit: '10mb' }))
 
 // API routes
+app.get('/api/config', (_, res) => {
+  res.json({
+    enableModelSelection: cfg.enableModelSelection,
+    activeModel: cfg.aiProvider === 'openai' ? cfg.openaiModel : cfg.anthropicModel,
+    models: MODEL_CATALOG,
+    reasoningEfforts: {
+      openai: OPENAI_REASONING_EFFORTS,
+      anthropic: CLAUDE_REASONING_EFFORTS,
+    },
+  })
+})
 app.use('/api/auth', authRoutes)
 app.use('/api/generate', generateRoutes)
 app.use('/api/sites', sitesRoutes)
@@ -69,6 +82,7 @@ app.use(errorHandler)
 
 app.listen(cfg.port, () => {
   console.log(`CtrlPoint server running on port ${cfg.port} [${cfg.nodeEnv}]`)
+  startDeployWorker()
 })
 
 export default app

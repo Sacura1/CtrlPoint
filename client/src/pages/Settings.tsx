@@ -1,19 +1,11 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import Header from '../components/Header'
 import { auth as authApi, sites as sitesApi, billing as billingApi } from '../api'
 import { useAuth } from '../store/auth'
 import { Site } from '../types'
 import { mnsPublicDomain } from '../utils/siteUrl'
-
-const MODEL_SELECTION_ENABLED = import.meta.env.VITE_ENABLE_MODEL_SELECTION === 'true'
-
-const MODELS = [
-  { id: 'claude-sonnet-4-6', label: 'Claude Sonnet', sub: 'Fast & capable',    provider: 'Anthropic' },
-  { id: 'claude-opus-4-7',   label: 'Claude Opus',   sub: 'Most powerful',     provider: 'Anthropic' },
-  { id: 'gpt-5.4-mini',      label: 'GPT-5.4 mini',  sub: 'Fast & affordable', provider: 'OpenAI'    },
-  { id: 'gpt-5.5',           label: 'GPT-5.5',        sub: 'Flagship reasoning', provider: 'OpenAI'  },
-] as const
+import ClaimedBadge from '../components/ClaimedBadge'
 
 interface Transaction {
   id: string
@@ -39,9 +31,6 @@ export default function Settings() {
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [claiming, setClaiming] = useState<string | null>(null)
   const [claimMsg, setClaimMsg] = useState<{ siteId: string; ok: boolean; text: string } | null>(null)
-  const [selectedModel, setSelectedModel] = useState<string>(
-    () => localStorage.getItem('ctrlpoint_model') || 'gpt-5.4-mini'
-  )
 
   useEffect(() => {
     sitesApi.list().then(({ sites }) => {
@@ -94,7 +83,8 @@ export default function Settings() {
     setClaiming(site.id)
     setClaimMsg(null)
     try {
-      await sitesApi.transferOwnership(site.id)
+      const result = await sitesApi.transferOwnership(site.id)
+      setSites(prev => prev.map(s => s.id === site.id ? result.site : s))
       setClaimMsg({ siteId: site.id, ok: true, text: 'Ownership transferred to your wallet.' })
     } catch (err: any) {
       setClaimMsg({ siteId: site.id, ok: false, text: err.message })
@@ -155,57 +145,6 @@ export default function Settings() {
           </div>
         </Section>
 
-        {/* AI Model */}
-        <Section title="AI Model">
-          <div className="px-5 py-4">
-            <div className="flex items-center gap-2 mb-3">
-              <p className="text-xs" style={{ color: '#8888aa' }}>
-                Choose which model generates and edits your sites.
-              </p>
-              {!MODEL_SELECTION_ENABLED && (
-                <span className="text-xs px-2 py-0.5 rounded-full flex-shrink-0 font-medium"
-                  style={{ background: 'rgba(124,58,237,0.1)', border: '1px solid rgba(124,58,237,0.2)', color: '#a78bfa' }}>
-                  Coming soon
-                </span>
-              )}
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              {MODELS.map(m => {
-                const isSelected = selectedModel === m.id
-                const disabled = !MODEL_SELECTION_ENABLED
-                return (
-                  <button
-                    key={m.id}
-                    disabled={disabled}
-                    onClick={() => {
-                      setSelectedModel(m.id)
-                      localStorage.setItem('ctrlpoint_model', m.id)
-                    }}
-                    className="flex flex-col items-start px-3.5 py-3 rounded-xl text-left transition-all duration-200"
-                    style={{
-                      opacity: disabled ? 0.4 : 1,
-                      cursor: disabled ? 'not-allowed' : 'pointer',
-                      background: isSelected && !disabled
-                        ? 'rgba(124,58,237,0.15)'
-                        : 'rgba(255,255,255,0.03)',
-                      border: isSelected && !disabled
-                        ? '1px solid rgba(124,58,237,0.4)'
-                        : '1px solid rgba(255,255,255,0.07)',
-                    }}
-                  >
-                    <span className="text-xs font-semibold text-ink-100">{m.label}</span>
-                    <span className="text-xs mt-0.5" style={{ color: '#8888aa' }}>{m.sub}</span>
-                    <span className="text-xs mt-1.5 px-1.5 py-0.5 rounded font-medium"
-                      style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.2)' }}>
-                      {m.provider}
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-        </Section>
-
         {/* Credits */}
         <Section title="Credits">
           <div className="px-5 py-4 flex items-center justify-between">
@@ -214,6 +153,12 @@ export default function Settings() {
               style={{ background: 'rgba(124,58,237,0.1)', border: '1px solid rgba(124,58,237,0.2)' }}>
               <span className="text-xl font-bold text-brand-400 tabular-nums">{user?.credits ?? 0}</span>
               <span className="text-xs text-ink-600">credits</span>
+              <Link to="/credits"
+                className="ml-1 flex h-6 w-6 items-center justify-center rounded-lg text-sm font-bold transition-all"
+                style={{ background: 'rgba(167,139,250,0.16)', color: '#c4b5fd', border: '1px solid rgba(167,139,250,0.22)' }}
+                aria-label="Top up credits">
+                +
+              </Link>
             </div>
           </div>
 
@@ -244,7 +189,7 @@ export default function Settings() {
           <Section title="On-chain Ownership">
             <div className="px-5 pb-1 pt-2">
               <p className="text-xs mb-4" style={{ color: '#8888aa' }}>
-                Sites are owned by the CtrlPoint platform wallet. Claim ownership to transfer the MNS domain to your personal address.
+                Sites are owned by the CtrlPoint platform wallet. Claim ownership to transfer the MNS domain to your personal address. After claiming, CtrlPoint updates and GitHub auto-deploy are disabled for that site.
               </p>
             </div>
             {sites.map((site, i) => {
@@ -254,7 +199,10 @@ export default function Settings() {
                   style={{ borderTop: i === 0 ? '1px solid rgba(255,255,255,0.05)' : '1px solid rgba(255,255,255,0.04)' }}>
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0">
-                      <p className="text-sm font-semibold text-ink-100 truncate">{site.title}</p>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <p className="text-sm font-semibold text-ink-100 truncate">{site.title}</p>
+                        {site.ownershipClaimed && <ClaimedBadge compact />}
+                      </div>
                       <p className="text-xs font-mono mt-0.5" style={{ color: '#8888aa' }}>
                         {site.mnsName}.{mnsPublicDomain}
                       </p>
@@ -265,12 +213,12 @@ export default function Settings() {
                       )}
                     </div>
                     <button onClick={() => claimOwnership(site)}
-                      disabled={claiming === site.id || msg?.ok === true}
+                      disabled={claiming === site.id || site.ownershipClaimed}
                       className="text-xs py-1.5 px-3 rounded-lg flex-shrink-0 font-medium transition-all duration-200"
                       style={{ background: 'rgba(124,58,237,0.1)', border: '1px solid rgba(124,58,237,0.2)', color: '#a78bfa' }}
-                      onMouseEnter={e => { if (!msg?.ok) e.currentTarget.style.background = 'rgba(124,58,237,0.2)' }}
+                      onMouseEnter={e => { if (!site.ownershipClaimed) e.currentTarget.style.background = 'rgba(124,58,237,0.2)' }}
                       onMouseLeave={e => { e.currentTarget.style.background = 'rgba(124,58,237,0.1)' }}>
-                      {claiming === site.id ? 'Transferring…' : msg?.ok ? 'Claimed ✓' : 'Claim ownership'}
+                      {claiming === site.id ? 'Transferring…' : site.ownershipClaimed ? 'Claimed' : 'Claim ownership'}
                     </button>
                   </div>
                   {msg && (

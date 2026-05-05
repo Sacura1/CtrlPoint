@@ -9,6 +9,7 @@ server/dist/
 .DS_Store
 *.log
 hh.html
+*.pem
 # ENV files
 .env
 *.env

@@ -12,6 +12,7 @@ RUN cd client && npm run build
 # ── Build server ──────────────────────────────────────────────────────────────
 FROM base AS server-builder
 COPY server/package*.json ./server/
+COPY server/prisma ./server/prisma
 RUN cd server && npm ci
 COPY server ./server
 RUN cd server && npx prisma generate && npm run build
@@ -33,4 +34,4 @@ RUN mkdir -p /app/data
 
 EXPOSE 3001
 
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/index.js"]
+CMD ["node", "dist/index.js"]

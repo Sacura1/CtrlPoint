@@ -10,6 +10,7 @@ import Deploy from './pages/Deploy'
 import Keys from './pages/Keys'
 import Deployments from './pages/Deployments'
 import GitHub from './pages/GitHub'
+import Credits from './pages/Credits'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth()
@@ -44,6 +45,7 @@ export default function App() {
       <Route path="/keys" element={<PrivateRoute><Keys /></PrivateRoute>} />
       <Route path="/deployments" element={<PrivateRoute><Deployments /></PrivateRoute>} />
       <Route path="/github" element={<PrivateRoute><GitHub /></PrivateRoute>} />
+      <Route path="/credits" element={<PrivateRoute><Credits /></PrivateRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )

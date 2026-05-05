@@ -4,6 +4,7 @@ import Header from '../components/Header'
 import { sites as sitesApi, github as githubApi } from '../api'
 import { Site } from '../types'
 import { getSiteUrl, mnsPublicDomain } from '../utils/siteUrl'
+import ClaimedBadge from '../components/ClaimedBadge'
 
 const STATUS = {
   DRAFT:     { label: 'Draft',      color: 'rgba(74,74,106,0.6)',  dot: '#4a4a6a',  glow: 'none' },
@@ -75,7 +76,7 @@ export default function Dashboard() {
           <h1 className="text-2xl font-bold text-ink-50">My Web-Apps</h1>
           {!loading && (
             <p className="text-ink-600 text-sm mt-0.5">
-              {siteList.length === 0 ? 'No web-apps yet' : `${siteList.length} web-app${siteList.length !== 1 ? 's' : ''} deployed`}
+              {siteList.length === 0 ? 'No web-apps yet' : `${siteList.length} saved web-app${siteList.length !== 1 ? 's' : ''}`}
             </p>
           )}
         </div>
@@ -117,6 +118,7 @@ export default function Dashboard() {
                         style={{ background: s.color, color: s.dot }}>
                         {s.label}
                       </span>
+                      {site.ownershipClaimed && <ClaimedBadge compact />}
                       {/* Deployment method */}
                       {ghConnections[site.id] ? (
                         <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0"

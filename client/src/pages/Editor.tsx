@@ -3,25 +3,46 @@ import { useParams, useNavigate } from 'react-router-dom'
 import Header from '../components/Header'
 import Preview from '../components/Preview'
 import DeployModal from '../components/DeployModal'
-import { generate as genApi, sites as sitesApi } from '../api'
+import { appConfig, generate as genApi, sites as sitesApi, ModelOption, ReasoningEffortOption } from '../api'
 import { Site } from '../types'
 import { getSiteUrl, mnsPublicDomain } from '../utils/siteUrl'
+import ClaimedBadge from '../components/ClaimedBadge'
+import { useAuth } from '../store/auth'
 
-const MODEL_SELECTION_ENABLED = import.meta.env.VITE_ENABLE_MODEL_SELECTION === 'true'
-
-const MODELS = [
-  { id: 'claude-sonnet-4-6', label: 'Sonnet 4.6', full: 'Claude Sonnet 4.6', sub: 'Fast & capable',     provider: 'Anthropic' },
-  { id: 'claude-opus-4-7',   label: 'Opus 4.7',   full: 'Claude Opus 4.7',   sub: 'Most powerful',      provider: 'Anthropic' },
-  { id: 'gpt-4o',            label: 'GPT-4o',     full: 'GPT-4o',            sub: 'Fast & capable',     provider: 'OpenAI'    },
-  { id: 'gpt-5.3',           label: 'GPT-5.3',    full: 'GPT-5.3',           sub: 'Advanced reasoning', provider: 'OpenAI'    },
-  { id: 'gpt-5.4',           label: 'GPT-5.4',    full: 'GPT-5.4',           sub: 'High performance',   provider: 'OpenAI'    },
-  { id: 'gpt-5.5',           label: 'GPT-5.5',    full: 'GPT-5.5',           sub: 'Flagship reasoning', provider: 'OpenAI'    },
-] as const
+const DEFAULT_MODELS: ModelOption[] = [
+  { id: 'gpt-5.4-mini', label: 'GPT-5.4 mini', full: 'GPT-5.4 mini', sub: 'Cheapest GPT option', provider: 'OpenAI', cost: 1, supportsReasoning: true, reasoningEfforts: ['low', 'medium', 'high', 'xhigh'] },
+]
+const DEFAULT_REASONING_EFFORTS: Record<'openai' | 'anthropic', ReasoningEffortOption[]> = {
+  openai: [
+    { id: 'low', label: 'Low', sub: 'Faster, lower-cost reasoning' },
+    { id: 'medium', label: 'Medium', sub: 'Balanced reasoning' },
+    { id: 'high', label: 'High', sub: 'Deeper reasoning' },
+    { id: 'xhigh', label: 'XHigh', sub: 'Hardest OpenAI tasks' },
+  ],
+  anthropic: [
+    { id: 'low', label: 'Low', sub: 'Most efficient' },
+    { id: 'medium', label: 'Medium', sub: 'Balanced token savings' },
+    { id: 'high', label: 'High', sub: 'Claude default depth' },
+    { id: 'xhigh', label: 'XHigh', sub: 'Long agentic work' },
+    { id: 'max', label: 'Max', sub: 'Absolute maximum capability' },
+  ],
+}
 
 interface Message { role: 'user' | 'assistant'; content: string }
 type MobileTab = 'chat' | 'preview'
 
+function draftNameFromTitle(title: string) {
+  const base = title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 42) || 'web-app'
+  const suffix = Date.now().toString(36).slice(-6)
+  return `${base}-${suffix}`.slice(0, 100).replace(/-+$/g, '')
+}
+
 export default function Editor() {
+  const { user, setUser } = useAuth()
   const { siteId } = useParams()
   const navigate = useNavigate()
   const endRef = useRef<HTMLDivElement>(null)
@@ -40,15 +61,46 @@ export default function Editor() {
   const [error, setError] = useState('')
   const [hasChanges, setHasChanges] = useState(false)
   const [mobileTab, setMobileTab] = useState<MobileTab>('chat')
+  const [modelSelectionEnabled, setModelSelectionEnabled] = useState(false)
+  const [loadingConfig, setLoadingConfig] = useState(true)
+  const [activeDefaultModel, setActiveDefaultModel] = useState(DEFAULT_MODELS[0].id)
+  const [models, setModels] = useState<ModelOption[]>(DEFAULT_MODELS)
+  const [reasoningEfforts, setReasoningEfforts] = useState(DEFAULT_REASONING_EFFORTS)
   const [selectedModel, setSelectedModel] = useState<string>(
     () => {
       const saved = localStorage.getItem('ctrlpoint_model')
-      const valid = MODELS.map(m => m.id as string)
-      return saved && valid.includes(saved) ? saved : 'gpt-4o'
+      return saved || DEFAULT_MODELS[0].id
     }
   )
+  const [selectedReasoningEffort, setSelectedReasoningEffort] = useState<string>(
+    () => localStorage.getItem('ctrlpoint_reasoning_effort') || 'medium'
+  )
   const [modelOpen, setModelOpen] = useState(false)
+  const [reasoningOpen, setReasoningOpen] = useState(false)
   const modelRef = useRef<HTMLDivElement>(null)
+  const reasoningRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    appConfig.get()
+      .then(({ enableModelSelection, activeModel, models, reasoningEfforts }) => {
+        setModelSelectionEnabled(enableModelSelection)
+        setActiveDefaultModel(activeModel)
+        if (models.length > 0) {
+          setModels(models)
+          setSelectedModel(current => {
+            if (models.some(model => model.id === current)) return current
+            const next = models[0].id
+            localStorage.setItem('ctrlpoint_model', next)
+            return next
+          })
+        }
+        if (reasoningEfforts.openai.length > 0 && reasoningEfforts.anthropic.length > 0) {
+          setReasoningEfforts(reasoningEfforts)
+        }
+      })
+      .catch(() => setModelSelectionEnabled(false))
+      .finally(() => setLoadingConfig(false))
+  }, [])
 
   useEffect(() => {
     if (!siteId) {
@@ -91,6 +143,15 @@ useEffect(() => {
     return () => document.removeEventListener('mousedown', handler)
   }, [modelOpen])
 
+useEffect(() => {
+    if (!reasoningOpen) return
+    const handler = (e: MouseEvent) => {
+      if (reasoningRef.current && !reasoningRef.current.contains(e.target as Node)) setReasoningOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [reasoningOpen])
+
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(e.target.value)
     e.target.style.height = 'auto'
@@ -114,12 +175,14 @@ useEffect(() => {
     const history = newMessages.map(m => ({ role: m.role, content: m.content }))
 
     try {
-      const model = MODEL_SELECTION_ENABLED ? selectedModel : undefined
+      const model = modelSelectionEnabled ? selectedModel : undefined
+      const activeModel = models.find(m => m.id === selectedModel) ?? models[0]
+      const reasoningEffort = modelSelectionEnabled && activeModel.supportsReasoning ? activeReasoningEffort : undefined
       let response
       if (site) {
-        response = await genApi.update(site.id, history, model)
+        response = await genApi.update(site.id, history, model, reasoningEffort)
       } else {
-        response = await genApi.chat(history, model, html || undefined)
+        response = await genApi.chat(history, model, html || undefined, reasoningEffort)
       }
 
       if (response.type === 'site') {
@@ -127,10 +190,27 @@ useEffect(() => {
         setTitle(response.title!)
         setDescription(response.description!)
         setHasChanges(true)
+        if (!site) {
+          try {
+            const { site: draftSite } = await sitesApi.create({
+              mnsName: draftNameFromTitle(response.title!),
+              generatedCode: response.html!,
+              title: response.title!,
+              description: response.description!,
+              lastPrompt: msg,
+            })
+            setSite(draftSite)
+          } catch (draftErr: any) {
+            setError(`Site generated, but draft autosave failed: ${draftErr.message}`)
+          }
+        }
         setMessages(prev => [...prev, { role: 'assistant', content: 'Done! You can keep refining or deploy when ready.' }])
         setMobileTab('preview')
       } else {
         setMessages(prev => [...prev, { role: 'assistant', content: response.text! }])
+      }
+      if (typeof response.credits === 'number' && user) {
+        setUser({ ...user, credits: response.credits })
       }
     } catch (err: any) {
       setError(err.message)
@@ -142,6 +222,22 @@ useEffect(() => {
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() }
+  }
+
+  const startNewChat = () => {
+    sessionStorage.removeItem('ctrlpoint_upload')
+    setSite(null)
+    setHtml('')
+    setTitle('New site')
+    setDescription('')
+    setMessages([{ role: 'assistant', content: "What do you want to build? Describe your site and I'll generate it instantly." }])
+    setInput('')
+    setError('')
+    setHasChanges(false)
+    setShowDeploy(false)
+    setMobileTab('chat')
+    if (inputRef.current) inputRef.current.style.height = 'auto'
+    if (siteId) navigate('/editor')
   }
 
   const handleDeployed = (newSite: Site) => {
@@ -159,6 +255,15 @@ useEffect(() => {
   const isLive = site?.status === 'LIVE'
   const isBusy = site?.status === 'DEPLOYING' || site?.status === 'UPDATING'
   const liveSiteUrl = site ? getSiteUrl(site.mnsName) : ''
+  const selectedModelOption = models.find(m => m.id === selectedModel) ?? models[0]
+  const reasoningSupported = selectedModelOption.supportsReasoning
+  const reasoningProvider = selectedModelOption.provider === 'Anthropic' ? 'anthropic' : 'openai'
+  const availableReasoningEfforts = reasoningEfforts[reasoningProvider].filter(effort =>
+    selectedModelOption.reasoningEfforts.includes(effort.id)
+  )
+  const activeReasoningEffort = availableReasoningEfforts.some(effort => effort.id === selectedReasoningEffort)
+    ? selectedReasoningEffort
+    : availableReasoningEfforts[0]?.id ?? 'medium'
 
   return (
     <div className="flex flex-col h-dvh overflow-hidden" style={{ background: '#05050d' }}>
@@ -178,24 +283,44 @@ useEffect(() => {
               style={{ color: 'rgba(52,211,153,0.8)' }}>
               {site?.mnsName}.{mnsPublicDomain} ↗
             </a>
+            {site?.ownershipClaimed && <ClaimedBadge compact />}
           </>
         )}
 
         <div className="flex-1" />
 
+        <button
+          onClick={startNewChat}
+          disabled={generating}
+          className="btn-ghost py-1 px-2.5 text-xs hidden sm:inline-flex text-ink-500 hover:text-ink-100"
+          title="Start a new chat"
+        >
+          New
+        </button>
+
         {/* Mobile toggle */}
         {html && (
-          <div className="flex sm:hidden rounded-xl p-0.5 text-xs"
-            style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
-            {(['chat', 'preview'] as MobileTab[]).map(t => (
-              <button key={t} onClick={() => setMobileTab(t)}
-                className="px-3 py-1 rounded-lg capitalize transition-all duration-200"
-                style={mobileTab === t
-                  ? { background: 'rgba(255,255,255,0.1)', color: '#f0f0ff' }
-                  : { color: 'rgba(255,255,255,0.3)' }}>
-                {t}
-              </button>
-            ))}
+          <div className="flex sm:hidden items-center gap-2">
+            <button
+              onClick={startNewChat}
+              disabled={generating}
+              className="btn-ghost py-1 px-2.5 text-xs text-ink-500 hover:text-ink-100"
+              title="Start a new chat"
+            >
+              New
+            </button>
+            <div className="flex rounded-xl p-0.5 text-xs"
+              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
+              {(['chat', 'preview'] as MobileTab[]).map(t => (
+                <button key={t} onClick={() => setMobileTab(t)}
+                  className="px-3 py-1 rounded-lg capitalize transition-all duration-200"
+                  style={mobileTab === t
+                    ? { background: 'rgba(255,255,255,0.1)', color: '#f0f0ff' }
+                    : { color: 'rgba(255,255,255,0.3)' }}>
+                  {t}
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
@@ -306,66 +431,137 @@ useEffect(() => {
                 {/* Model picker */}
                 <div ref={modelRef} className="relative self-start">
                   <button
-                    onClick={() => setModelOpen(p => !p)}
+                    onClick={() => {
+                      if (!modelSelectionEnabled) return
+                      setModelOpen(p => !p)
+                    }}
+                    disabled={!modelSelectionEnabled}
                     className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-xs transition-all duration-150"
                     style={{
                       background: modelOpen ? 'rgba(124,58,237,0.1)' : 'rgba(255,255,255,0.04)',
                       border: `1px solid ${modelOpen ? 'rgba(124,58,237,0.25)' : 'rgba(255,255,255,0.08)'}`,
-                      color: 'rgba(200,200,224,0.6)',
+                      color: modelSelectionEnabled ? 'rgba(200,200,224,0.6)' : 'rgba(200,200,224,0.28)',
+                      cursor: modelSelectionEnabled ? 'pointer' : 'not-allowed',
                     }}
+                    title={loadingConfig ? 'Loading model settings' : modelSelectionEnabled ? 'Select model' : 'Model selection is disabled'}
                   >
-                    <span>{MODELS.find(m => m.id === selectedModel)?.label ?? MODELS[0].label}</span>
+                    <span>{modelSelectionEnabled ? (models.find(m => m.id === selectedModel)?.label ?? models[0].label) : activeDefaultModel}</span>
                     <svg width="8" height="8" viewBox="0 0 8 8" fill="none" style={{ opacity: 0.5 }}>
                       <path d="M1.5 3L4 5.5L6.5 3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
                     </svg>
                   </button>
 
                   {modelOpen && (
-                    <div className="absolute bottom-full left-0 mb-1.5 w-56 rounded-xl overflow-hidden animate-fade-in z-10"
+                    <div className="absolute bottom-full left-0 mb-1.5 w-64 rounded-xl animate-fade-in z-50 no-scrollbar"
                       style={{
                         background: 'rgba(10,10,24,0.98)',
                         border: '1px solid rgba(255,255,255,0.1)',
                         boxShadow: '0 16px 40px rgba(0,0,0,0.7)',
+                        maxHeight: 'min(56vh, 360px)',
+                        overflowY: 'auto',
+                        overscrollBehavior: 'contain',
                       }}>
-                      {!MODEL_SELECTION_ENABLED && (
-                        <div className="px-3 py-2 flex items-center gap-1.5"
-                          style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(124,58,237,0.06)' }}>
-                          <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
-                            <circle cx="6" cy="6" r="5" stroke="#a78bfa" strokeWidth="1.2"/>
-                            <path d="M6 5v3M6 3.5v.5" stroke="#a78bfa" strokeWidth="1.2" strokeLinecap="round"/>
-                          </svg>
-                          <span className="text-xs" style={{ color: '#a78bfa' }}>Model selection coming soon</span>
-                        </div>
-                      )}
-                      {MODELS.map((m, i) => {
-                        const active = MODEL_SELECTION_ENABLED && m.id === selectedModel
-                        const selectable = MODEL_SELECTION_ENABLED
+                      {models.map((m, i) => {
+                        const active = m.id === selectedModel
                         return (
                           <div key={m.id}
                             onClick={() => {
-                              if (!selectable) return
                               setSelectedModel(m.id)
                               localStorage.setItem('ctrlpoint_model', m.id)
+                              if (m.supportsReasoning && !m.reasoningEfforts.includes(selectedReasoningEffort)) {
+                                const nextEffort = m.reasoningEfforts.includes('medium') ? 'medium' : m.reasoningEfforts[0]
+                                if (nextEffort) {
+                                  setSelectedReasoningEffort(nextEffort)
+                                  localStorage.setItem('ctrlpoint_reasoning_effort', nextEffort)
+                                }
+                              }
                               setModelOpen(false)
                             }}
                             className="flex items-center justify-between px-3 py-2.5 transition-colors duration-100"
                             style={{
                               borderTop: i > 0 ? '1px solid rgba(255,255,255,0.05)' : 'none',
                               background: active ? 'rgba(124,58,237,0.12)' : 'transparent',
-                              cursor: selectable ? 'pointer' : 'default',
+                              cursor: 'pointer',
                             }}
-                            onMouseEnter={e => { if (selectable && !active) e.currentTarget.style.background = 'rgba(255,255,255,0.04)' }}
-                            onMouseLeave={e => { if (selectable && !active) e.currentTarget.style.background = 'transparent' }}
+                            onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'rgba(255,255,255,0.04)' }}
+                            onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent' }}
                           >
                             <div className="min-w-0">
                               <div className="flex items-center gap-1.5">
-                                <p className="text-xs font-medium" style={{ color: active ? '#c4b5fd' : selectable ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.35)' }}>{m.full}</p>
+                                <p className="text-xs font-medium" style={{ color: active ? '#c4b5fd' : 'rgba(255,255,255,0.7)' }}>{m.full}</p>
                                 <span className="text-xs px-1 py-px rounded flex-shrink-0"
                                   style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.2)', fontSize: '9px' }}>
                                   {m.provider}
                                 </span>
                               </div>
                               <p className="text-xs mt-0.5" style={{ color: 'rgba(255,255,255,0.2)' }}>{m.sub}</p>
+                              <p className="text-xs mt-0.5" style={{ color: 'rgba(167,139,250,0.45)' }}>{m.cost} credit{m.cost === 1 ? '' : 's'}</p>
+                            </div>
+                            {active && (
+                              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className="flex-shrink-0 ml-2">
+                                <path d="M2 6l3 3 5-5" stroke="#a78bfa" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                              </svg>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                <div ref={reasoningRef} className="relative self-start">
+                  <button
+                    onClick={() => {
+                      if (!modelSelectionEnabled || !reasoningSupported) return
+                      setReasoningOpen(p => !p)
+                    }}
+                    disabled={!modelSelectionEnabled || !reasoningSupported}
+                    className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-xs transition-all duration-150"
+                    style={{
+                      background: reasoningOpen ? 'rgba(124,58,237,0.1)' : 'rgba(255,255,255,0.04)',
+                      border: `1px solid ${reasoningOpen ? 'rgba(124,58,237,0.25)' : 'rgba(255,255,255,0.08)'}`,
+                      color: modelSelectionEnabled && reasoningSupported ? 'rgba(200,200,224,0.6)' : 'rgba(200,200,224,0.28)',
+                      cursor: modelSelectionEnabled && reasoningSupported ? 'pointer' : 'not-allowed',
+                    }}
+                    title={loadingConfig ? 'Loading model settings' : !modelSelectionEnabled ? 'Model selection is disabled' : reasoningSupported ? 'Select reasoning level' : 'This model does not support explicit reasoning controls'}
+                  >
+                    <span>Effort: {availableReasoningEfforts.find(e => e.id === activeReasoningEffort)?.label ?? activeReasoningEffort}</span>
+                    <svg width="8" height="8" viewBox="0 0 8 8" fill="none" style={{ opacity: 0.5 }}>
+                      <path d="M1.5 3L4 5.5L6.5 3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  </button>
+
+                  {reasoningOpen && (
+                    <div className="absolute bottom-full left-0 mb-1.5 w-48 rounded-xl animate-fade-in z-50 no-scrollbar"
+                      style={{
+                        background: 'rgba(10,10,24,0.98)',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        boxShadow: '0 16px 40px rgba(0,0,0,0.7)',
+                        maxHeight: 'min(44vh, 260px)',
+                        overflowY: 'auto',
+                        overscrollBehavior: 'contain',
+                      }}>
+                      {availableReasoningEfforts.map((effort, i) => {
+                        const active = effort.id === activeReasoningEffort
+                        return (
+                          <div key={effort.id}
+                            onClick={() => {
+                              setSelectedReasoningEffort(effort.id)
+                              localStorage.setItem('ctrlpoint_reasoning_effort', effort.id)
+                              setReasoningOpen(false)
+                            }}
+                            className="flex items-center justify-between px-3 py-2.5 transition-colors duration-100"
+                            style={{
+                              borderTop: i > 0 ? '1px solid rgba(255,255,255,0.05)' : 'none',
+                              background: active ? 'rgba(124,58,237,0.12)' : 'transparent',
+                              cursor: 'pointer',
+                            }}
+                            onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'rgba(255,255,255,0.04)' }}
+                            onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent' }}
+                          >
+                            <div>
+                              <p className="text-xs font-medium" style={{ color: active ? '#c4b5fd' : 'rgba(255,255,255,0.7)' }}>{effort.label}</p>
+                              <p className="text-xs mt-0.5" style={{ color: 'rgba(255,255,255,0.2)' }}>{effort.sub}</p>
                             </div>
                             {active && (
                               <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className="flex-shrink-0 ml-2">

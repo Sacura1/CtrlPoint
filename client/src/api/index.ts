@@ -26,9 +26,29 @@ export interface AIResponse {
   html?: string
   title?: string
   description?: string
+  credits?: number
+}
+export interface ModelOption {
+  id: string
+  label: string
+  full: string
+  sub: string
+  provider: 'OpenAI' | 'Anthropic'
+  cost: number
+  supportsReasoning: boolean
+  reasoningEfforts: string[]
+}
+export interface ReasoningEffortOption {
+  id: string
+  label: string
+  sub: string
 }
 
 // Auth
+export const appConfig = {
+  get: () => request<{ enableModelSelection: boolean; activeModel: string; models: ModelOption[]; reasoningEfforts: { openai: ReasoningEffortOption[]; anthropic: ReasoningEffortOption[] } }>('/config'),
+}
+
 export const auth = {
   google: (token: string, type: 'idToken' | 'accessToken' = 'accessToken') =>
     request<{ user: User }>('/auth/google', { method: 'POST', body: JSON.stringify({ [type]: token }) }),
@@ -46,10 +66,10 @@ export const auth = {
 
 // AI Chat
 export const generate = {
-  chat: (history: ChatMessage[], model?: string, currentHtml?: string) =>
-    request<AIResponse>('/generate', { method: 'POST', body: JSON.stringify({ history, model, currentHtml }) }),
-  update: (siteId: string, history: ChatMessage[], model?: string) =>
-    request<AIResponse>(`/generate/update/${siteId}`, { method: 'POST', body: JSON.stringify({ history, model }) }),
+  chat: (history: ChatMessage[], model?: string, currentHtml?: string, reasoningEffort?: string) =>
+    request<AIResponse>('/generate', { method: 'POST', body: JSON.stringify({ history, model, currentHtml, reasoningEffort }) }),
+  update: (siteId: string, history: ChatMessage[], model?: string, reasoningEffort?: string) =>
+    request<AIResponse>(`/generate/update/${siteId}`, { method: 'POST', body: JSON.stringify({ history, model, reasoningEffort }) }),
   revert: (siteId: string) =>
     request<AIResponse>(`/generate/revert/${siteId}`, { method: 'POST' }),
 }
@@ -60,9 +80,11 @@ export const sites = {
   get: (id: string) => request<{ site: Site }>(`/sites/${id}`),
   create: (data: { mnsName: string; generatedCode: string; title: string; description: string; lastPrompt?: string }) =>
     request<{ site: Site }>('/sites', { method: 'POST', body: JSON.stringify(data) }),
+  updateDraft: (id: string, data: { mnsName?: string; generatedCode?: string; title?: string; description?: string; lastPrompt?: string }) =>
+    request<{ site: Site }>(`/sites/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   delete: (id: string) => request(`/sites/${id}`, { method: 'DELETE' }),
   deployments: (id: string) => request<{ deployments: import('../types').SiteDeployment[] }>(`/sites/${id}/deployments`),
-  transferOwnership: (id: string) => request(`/sites/${id}/transfer-ownership`, { method: 'POST' }),
+  transferOwnership: (id: string) => request<{ ok: boolean; site: Site; message: string }>(`/sites/${id}/transfer-ownership`, { method: 'POST' }),
 }
 
 // Deploy
@@ -85,6 +107,8 @@ export const github = {
     request<{ connection: any }>('/github/connect', { method: 'POST', body: JSON.stringify(data) }),
   disconnect: (siteId: string) =>
     request<{ ok: boolean }>(`/github/connect/${siteId}`, { method: 'DELETE' }),
+  disconnectAccount: () =>
+    request<{ ok: boolean }>('/github/account', { method: 'DELETE' }),
 }
 
 // File upload

@@ -33,12 +33,12 @@ export const cfg = {
 
   googleClientId: process.env.GOOGLE_CLIENT_ID || '',
 
-  // AI provider: 'anthropic' uses Claude (best for code), 'openai' uses GPT-4o
+  // AI provider: 'anthropic' uses Claude, 'openai' uses GPT
   aiProvider: (process.env.AI_PROVIDER || 'anthropic') as 'anthropic' | 'openai',
   anthropicKey: process.env.ANTHROPIC_API_KEY || '',
   anthropicModel: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6',
   openaiKey: process.env.OPENAI_API_KEY || '',
-  openaiModel: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+  openaiModel: process.env.OPENAI_MODEL || 'gpt-4o',
 
   massaNodeUrl: process.env.MASSA_NODE_URL || 'https://mainnet.massa.net/api/v2',
   massaSecretKey: process.env.MASSA_PLATFORM_SECRET_KEY || '',
@@ -70,6 +70,10 @@ export const cfg = {
 
   // Feature flags
   enableModelSelection: process.env.ENABLE_MODEL_SELECTION === 'true',
+  enableDeployWorker: process.env.ENABLE_DEPLOY_WORKER !== 'false',
+  deployWorkerPollMs: parseInt(process.env.DEPLOY_WORKER_POLL_MS || '3000'),
+  deployWorkerStaticConcurrency: parseInt(process.env.DEPLOY_WORKER_STATIC_CONCURRENCY || '3'),
+  deployWorkerFrameworkConcurrency: parseInt(process.env.DEPLOY_WORKER_FRAMEWORK_CONCURRENCY || '1'),
 
   // Credits cost per action
   credits: {

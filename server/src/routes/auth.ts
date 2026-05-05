@@ -6,6 +6,7 @@ import { signToken, requireAuth } from '../middleware/auth'
 import { AuthRequest } from '../types'
 import { AppError } from '../middleware/errorHandler'
 import { cfg } from '../config'
+import { applyDailyFreeCredits } from '../services/credits'
 
 const router = Router()
 const prisma = new PrismaClient()
@@ -72,10 +73,11 @@ router.post('/google', async (req: Request, res: Response, next) => {
       if (!user.googleId) {
         user = await prisma.user.update({ where: { id: user.id }, data: { googleId } })
       }
+      user = await applyDailyFreeCredits(prisma, user.id) ?? user
     } else {
       // New user — create account, grant signup credits
       user = await prisma.user.create({
-        data: { email, googleId, credits: 3 },
+        data: { email, googleId, credits: 3, dailyCreditsResetAt: new Date() },
       })
       await prisma.creditTransaction.create({
         data: { userId: user.id, amount: 3, type: 'signup_bonus', note: 'Welcome bonus' },
@@ -105,7 +107,7 @@ router.post('/register', async (req: Request, res: Response, next) => {
 
     const passwordHash = await bcrypt.hash(password, 12)
     const user = await prisma.user.create({
-      data: { email, passwordHash, massaAddress: massaAddress || null },
+      data: { email, passwordHash, massaAddress: massaAddress || null, dailyCreditsResetAt: new Date() },
     })
     await prisma.creditTransaction.create({
       data: { userId: user.id, amount: 3, type: 'signup_bonus', note: 'Welcome bonus' },
@@ -131,9 +133,10 @@ router.post('/login', async (req: Request, res: Response, next) => {
     const valid = await bcrypt.compare(password, user.passwordHash!)
     if (!valid) throw new AppError(401, 'Invalid email or password.')
 
-    const token = signToken({ userId: user.id, email: user.email })
+    const refreshedUser = await applyDailyFreeCredits(prisma, user.id) ?? user
+    const token = signToken({ userId: refreshedUser.id, email: refreshedUser.email })
     setCookie(res, token)
-    res.json({ user: userPayload(user) })
+    res.json({ user: userPayload(refreshedUser) })
   } catch (err) { next(err) }
 })
 
@@ -149,7 +152,7 @@ router.post('/logout', (req: Request, res: Response) => {
 
 router.get('/me', requireAuth, async (req: AuthRequest, res: Response, next) => {
   try {
-    const user = await prisma.user.findUnique({ where: { id: req.user!.userId } })
+    const user = await applyDailyFreeCredits(prisma, req.user!.userId)
     if (!user) throw new AppError(404, 'User not found.')
     res.json({ user: userPayload(user) })
   } catch (err) { next(err) }

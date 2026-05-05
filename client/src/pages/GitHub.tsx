@@ -2,10 +2,12 @@ import { useState, useEffect } from 'react'
 import Header from '../components/Header'
 import { apiUrl, sites as sitesApi, github as githubApi } from '../api'
 import { Site } from '../types'
+import ClaimedBadge from '../components/ClaimedBadge'
 
 export default function GitHub() {
   const [sites, setSites] = useState<Site[]>([])
   const [githubConnected, setGithubConnected] = useState(false)
+  const [loadingGithubStatus, setLoadingGithubStatus] = useState(true)
   const [repos, setRepos] = useState<any[]>([])
   const [loadingRepos, setLoadingRepos] = useState(false)
   const [connectForm, setConnectForm] = useState<{
@@ -15,21 +17,29 @@ export default function GitHub() {
   const [connecting, setConnecting] = useState(false)
   const [connectMsg, setConnectMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [siteConnections, setSiteConnections] = useState<Record<string, any>>({})
+  const [loadingConnections, setLoadingConnections] = useState(true)
+  const [disconnectingGithub, setDisconnectingGithub] = useState(false)
 
   useEffect(() => {
-    githubApi.status().then(({ connected }) => setGithubConnected(connected))
+    githubApi.status()
+      .then(({ connected }) => setGithubConnected(connected))
+      .catch(() => setGithubConnected(false))
+      .finally(() => setLoadingGithubStatus(false))
     sitesApi.list().then(({ sites }) => {
       const liveSites = sites.filter(s => s.status === 'LIVE')
       setSites(liveSites)
+      setLoadingConnections(true)
       Promise.all(
         liveSites.map(s => githubApi.connection(s.id).then(c => c ? [s.id, c] : null).catch(() => null))
       ).then(results => {
         const map: Record<string, any> = {}
         results.forEach(r => { if (r) map[r[0] as string] = r[1] })
         setSiteConnections(map)
-      })
-    })
+      }).finally(() => setLoadingConnections(false))
+    }).catch(() => setLoadingConnections(false))
   }, [])
+
+  const connectedSites = sites.filter(site => siteConnections[site.id])
 
   const loadRepos = async () => {
     setLoadingRepos(true)
@@ -44,6 +54,11 @@ export default function GitHub() {
   }
 
   const startConnect = (siteId: string) => {
+    const site = sites.find(s => s.id === siteId)
+    if (site?.ownershipClaimed) {
+      setConnectMsg({ ok: false, text: 'This site has claimed ownership. Auto-deploy is disabled because CtrlPoint no longer controls its MNS record.' })
+      return
+    }
     setConnectForm({ siteId, repoOwner: '', repoName: '', githubInstallationId: undefined, branch: 'main', projectType: 'static', buildCommand: 'npm run build', outputDir: 'dist' })
     setConnectMsg(null)
     if (repos.length === 0) loadRepos()
@@ -71,6 +86,25 @@ export default function GitHub() {
       setSiteConnections(prev => { const n = { ...prev }; delete n[siteId]; return n })
     } catch (err: any) {
       setConnectMsg({ ok: false, text: err.message })
+    }
+  }
+
+  const disconnectGithubAccount = async () => {
+    const confirmed = window.confirm('Disconnect GitHub from CtrlPoint? This removes all repo auto-deploy links for your web-apps.')
+    if (!confirmed) return
+    setDisconnectingGithub(true)
+    setConnectMsg(null)
+    try {
+      await githubApi.disconnectAccount()
+      setGithubConnected(false)
+      setRepos([])
+      setSiteConnections({})
+      setConnectForm(null)
+      setConnectMsg({ ok: true, text: 'GitHub disconnected. You can connect it again anytime.' })
+    } catch (err: any) {
+      setConnectMsg({ ok: false, text: err.message })
+    } finally {
+      setDisconnectingGithub(false)
     }
   }
 
@@ -104,16 +138,34 @@ export default function GitHub() {
                   </div>
                   <div>
                     <p className="text-sm font-medium text-ink-200">GitHub account</p>
-                    <p className="text-xs" style={{ color: 'rgba(255,255,255,0.25)' }}>
-                      {githubConnected ? 'Installed - auto-deploy is available' : 'Not installed'}
-                    </p>
+                    {loadingGithubStatus ? (
+                      <div className="skeleton mt-1 h-3 w-36" />
+                    ) : (
+                      <p className="text-xs" style={{ color: 'rgba(255,255,255,0.25)' }}>
+                        {githubConnected ? 'Installed - auto-deploy is available' : 'Not installed'}
+                      </p>
+                    )}
                   </div>
                 </div>
-                {githubConnected ? (
-                  <span className="text-xs px-2 py-1 rounded-lg font-medium"
-                    style={{ background: 'rgba(52,211,153,0.1)', border: '1px solid rgba(52,211,153,0.2)', color: '#34d399' }}>
-                    Connected
-                  </span>
+                {loadingGithubStatus ? (
+                  <div className="skeleton h-7 w-20 rounded-lg" />
+                ) : githubConnected ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs px-2 py-1 rounded-lg font-medium"
+                      style={{ background: 'rgba(52,211,153,0.1)', border: '1px solid rgba(52,211,153,0.2)', color: '#34d399' }}>
+                      Connected
+                    </span>
+                    <button
+                      onClick={disconnectGithubAccount}
+                      disabled={disconnectingGithub}
+                      className="text-xs px-3 py-1.5 rounded-lg transition-all duration-200"
+                      style={{ color: 'rgba(248,113,113,0.65)', border: '1px solid rgba(248,113,113,0.18)', background: 'rgba(248,113,113,0.06)' }}
+                      onMouseEnter={e => { e.currentTarget.style.color = '#f87171'; e.currentTarget.style.borderColor = 'rgba(248,113,113,0.35)' }}
+                      onMouseLeave={e => { e.currentTarget.style.color = 'rgba(248,113,113,0.65)'; e.currentTarget.style.borderColor = 'rgba(248,113,113,0.18)' }}
+                    >
+                      {disconnectingGithub ? 'Disconnecting...' : 'Disconnect'}
+                    </button>
+                  </div>
                 ) : (
                   <a href={apiUrl('/github/install')}
                     className="text-xs font-medium px-3 py-1.5 rounded-lg transition-all duration-200"
@@ -126,10 +178,18 @@ export default function GitHub() {
               </div>
 
               {/* Per-site repo connections */}
-              {githubConnected && sites.length > 0 && (
+              {loadingGithubStatus && (
+                <RepoConnectionsSkeleton />
+              )}
+
+              {githubConnected && loadingConnections && (
+                <RepoConnectionsSkeleton />
+              )}
+
+              {githubConnected && !loadingConnections && connectedSites.length > 0 && (
                 <div className="space-y-2.5">
                   <p className="text-xs font-medium mb-3" style={{ color: 'rgba(255,255,255,0.25)' }}>WEB-APP REPO CONNECTIONS</p>
-                  {sites.map(site => {
+                  {connectedSites.map(site => {
                     const conn = siteConnections[site.id]
                     return (
                       <div key={site.id} className="px-4 py-3.5 rounded-xl"
@@ -137,7 +197,10 @@ export default function GitHub() {
                         <div className="flex items-center justify-between gap-3">
                           <div className="min-w-0">
                             <p className="text-xs mb-0.5 font-medium" style={{ color: 'rgba(255,255,255,0.25)' }}>WEB-APP</p>
-                            <p className="text-sm font-medium text-ink-100 truncate">{site.title}</p>
+                            <div className="flex items-center gap-2 min-w-0">
+                              <p className="text-sm font-medium text-ink-100 truncate">{site.title}</p>
+                              {site.ownershipClaimed && <ClaimedBadge compact />}
+                            </div>
                             {conn ? (
                               <div className="flex items-center gap-1.5 mt-1">
                                 <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" style={{ color: 'rgba(255,255,255,0.3)', flexShrink: 0 }}>
@@ -151,11 +214,15 @@ export default function GitHub() {
                                   auto-deploy on
                                 </span>
                               </div>
-                            ) : (
-                              <p className="text-xs mt-0.5" style={{ color: 'rgba(255,255,255,0.2)' }}>No repo connected yet</p>
-                            )}
+                            ) : null}
                           </div>
-                          {conn ? (
+                          {site.ownershipClaimed ? (
+                            <button disabled
+                              className="text-xs flex-shrink-0 px-3 py-1.5 rounded-lg font-medium"
+                              style={{ color: 'rgba(248,113,113,0.75)', border: '1px solid rgba(248,113,113,0.2)', background: 'rgba(248,113,113,0.07)' }}>
+                              Disabled
+                            </button>
+                          ) : conn ? (
                             <button onClick={() => disconnectRepo(site.id)}
                               className="text-xs flex-shrink-0 px-3 py-1.5 rounded-lg transition-all duration-200"
                               style={{ color: 'rgba(248,113,113,0.6)', border: '1px solid rgba(248,113,113,0.15)', background: 'rgba(248,113,113,0.05)' }}
@@ -163,15 +230,7 @@ export default function GitHub() {
                               onMouseLeave={e => { e.currentTarget.style.color = 'rgba(248,113,113,0.6)'; e.currentTarget.style.borderColor = 'rgba(248,113,113,0.15)' }}>
                               Disconnect
                             </button>
-                          ) : (
-                            <button onClick={() => startConnect(site.id)}
-                              className="text-xs flex-shrink-0 font-medium px-3 py-1.5 rounded-lg transition-all duration-200"
-                              style={{ background: 'rgba(124,58,237,0.12)', border: '1px solid rgba(124,58,237,0.25)', color: '#a78bfa' }}
-                              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(124,58,237,0.22)')}
-                              onMouseLeave={e => (e.currentTarget.style.background = 'rgba(124,58,237,0.12)')}>
-                              Launch Web-App
-                            </button>
-                          )}
+                          ) : null}
                         </div>
                       </div>
                     )
@@ -179,10 +238,10 @@ export default function GitHub() {
                 </div>
               )}
 
-              {githubConnected && sites.length === 0 && (
+              {githubConnected && !loadingConnections && connectedSites.length === 0 && (
                 <div className="py-6 text-center">
                   <p className="text-sm" style={{ color: 'rgba(255,255,255,0.2)' }}>
-                    Deploy a web-app first, then come back to connect a repo for auto-deploy.
+                    No GitHub-connected web-apps yet.
                   </p>
                 </div>
               )}
@@ -278,6 +337,27 @@ export default function GitHub() {
         </div>
 
       </main>
+    </div>
+  )
+}
+
+function RepoConnectionsSkeleton() {
+  return (
+    <div className="space-y-2.5">
+      <div className="skeleton h-3 w-40 mb-3" />
+      {[0, 1].map(i => (
+        <div key={i} className="px-4 py-3.5 rounded-xl"
+          style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}>
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="skeleton h-3 w-14 mb-2" />
+              <div className="skeleton h-4 w-36 mb-2" />
+              <div className="skeleton h-3 w-52 max-w-full" />
+            </div>
+            <div className="skeleton h-7 w-20 rounded-lg flex-shrink-0" />
+          </div>
+        </div>
+      ))}
     </div>
   )
 }

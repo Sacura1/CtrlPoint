@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { deploy as deployApi, sites as sitesApi } from '../api'
 import { DeployStatus, Site } from '../types'
 import { mnsPublicDomain } from '../utils/siteUrl'
+import ClaimedBadge, { claimedOwnershipMessage } from './ClaimedBadge'
 
 interface Props {
   generatedCode: string
@@ -16,13 +17,14 @@ interface Props {
 
 const STEPS: Record<string, string> = {
   QUEUED:          'Waiting in queue…',
+  BUILDING:        'Building project…',
   UPLOADING:       'Uploading to Massa chain…',
   MNS_REGISTERING: 'Registering domain…',
   COMPLETE:        'Your site is live!',
   FAILED:          'Deployment failed',
 }
 
-const STEP_ORDER = ['QUEUED', 'UPLOADING', 'MNS_REGISTERING', 'COMPLETE']
+const STEP_ORDER = ['QUEUED', 'BUILDING', 'UPLOADING', 'MNS_REGISTERING', 'COMPLETE']
 
 export default function DeployModal({ generatedCode, title, description, lastPrompt, existingSite, onClose, onDeployed, onLive }: Props) {
   const [mnsName, setMnsName]        = useState(existingSite?.mnsName ?? '')
@@ -35,6 +37,8 @@ export default function DeployModal({ generatedCode, title, description, lastPro
   const siteIdRef = useRef<string | null>(existingSite?.id ?? null)
 
   const isUpdate = !!existingSite?.scAddress
+  const isExistingDraft = !!existingSite && !existingSite.scAddress
+  const isClaimed = !!existingSite?.ownershipClaimed
 
   useEffect(() => {
     if (!mnsName || mnsName.length < 2 || isUpdate) return
@@ -70,6 +74,10 @@ export default function DeployModal({ generatedCode, title, description, lastPro
 
   const handleDeploy = async () => {
     setError('')
+    if (isClaimed) {
+      setError(claimedOwnershipMessage)
+      return
+    }
     setDeploying(true)
     try {
       let siteId = existingSite?.id
@@ -77,6 +85,9 @@ export default function DeployModal({ generatedCode, title, description, lastPro
         const { site } = await sitesApi.create({ mnsName, generatedCode, title, description, lastPrompt })
         siteId = site.id
         siteIdRef.current = siteId
+        onDeployed(site)
+      } else if (isExistingDraft) {
+        const { site } = await sitesApi.updateDraft(siteId, { mnsName, generatedCode, title, description, lastPrompt })
         onDeployed(site)
       }
       const { deploymentId: id } = await deployApi.start(siteId)
@@ -88,7 +99,7 @@ export default function DeployModal({ generatedCode, title, description, lastPro
   }
 
   const nameValid = /^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$/.test(mnsName) && mnsName.length >= 2
-  const canDeploy = isUpdate ? !deploying : (nameValid && mnsAvailable === true && !deploying)
+  const canDeploy = isClaimed ? false : isUpdate ? !deploying : (nameValid && mnsAvailable === true && !deploying)
   const isDone    = status?.status === 'COMPLETE' || status?.status === 'FAILED'
   const currentStepIdx = STEP_ORDER.indexOf(status?.status ?? 'QUEUED')
 
@@ -170,10 +181,21 @@ export default function DeployModal({ generatedCode, title, description, lastPro
                 </div>
               ) : (
                 <div className="rounded-xl px-4 py-3" style={{ background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.15)' }}>
-                  <p className="text-sm text-ink-200">
+                  <p className="text-sm text-ink-200 flex items-center gap-2 flex-wrap">
                     Updating <span className="text-brand-400 font-mono">{existingSite.mnsName}.{mnsPublicDomain}</span>
+                    {isClaimed && <ClaimedBadge compact />}
                   </p>
                   <p className="text-xs mt-0.5" style={{ color: 'rgba(255,255,255,0.25)' }}>URL stays the same — content updates in place.</p>
+                </div>
+              )}
+
+              {isClaimed && (
+                <div className="flex items-start gap-2.5 px-3.5 py-3 rounded-xl"
+                  style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)' }}>
+                  <svg className="w-3.5 h-3.5 text-red-400 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M18 10A8 8 0 112 10a8 8 0 0116 0zM9 8a1 1 0 112 0v5a1 1 0 11-2 0V8zm1-4a1.25 1.25 0 100 2.5A1.25 1.25 0 0010 4z" clipRule="evenodd"/>
+                  </svg>
+                  <p className="text-red-400 text-xs leading-relaxed">{claimedOwnershipMessage}</p>
                 </div>
               )}
 
@@ -195,7 +217,7 @@ export default function DeployModal({ generatedCode, title, description, lastPro
               )}
 
               <button className="btn-primary w-full py-3" onClick={handleDeploy} disabled={!canDeploy}>
-                {isUpdate ? 'Push update →' : 'Deploy to blockchain →'}
+                {isClaimed ? 'Ownership claimed' : isUpdate ? 'Push update →' : 'Deploy to blockchain →'}
               </button>
             </div>
 

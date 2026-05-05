@@ -3,6 +3,7 @@ import Header from '../components/Header'
 import { sites as sitesApi } from '../api'
 import { Site, SiteDeployment } from '../types'
 import { mnsPublicDomain } from '../utils/siteUrl'
+import ClaimedBadge from '../components/ClaimedBadge'
 
 const SOURCE_LABELS: Record<string, { label: string; color: string; bg: string; border: string }> = {
   agent:       { label: 'Agent',       color: '#34d399', bg: 'rgba(52,211,153,0.08)',  border: 'rgba(52,211,153,0.2)'  },
@@ -20,7 +21,7 @@ function timeAgo(date: string) {
 }
 
 function isActive(status: string) {
-  return status === 'QUEUED' || status === 'UPLOADING' || status === 'MNS_REGISTERING'
+  return status === 'QUEUED' || status === 'BUILDING' || status === 'UPLOADING' || status === 'MNS_REGISTERING'
 }
 
 export default function Deployments() {
@@ -123,6 +124,7 @@ export default function Deployments() {
                     <span className="text-sm font-semibold font-mono min-w-0 flex-1 truncate" style={{ color: '#f0f0ff' }}>
                       {site.mnsName}.{mnsPublicDomain}
                     </span>
+                    {site.ownershipClaimed && <ClaimedBadge compact />}
                     <span className="text-xs flex-shrink-0 basis-full sm:basis-auto pl-5 sm:pl-0 sm:ml-auto" style={{ color: '#4a4a6a' }}>{deploys.length} deployment{deploys.length !== 1 ? 's' : ''}</span>
                   </div>
 
@@ -153,6 +155,7 @@ export default function Deployments() {
                 style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
                 <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: '#4a4a6a' }} />
                 <span className="text-sm font-mono min-w-0 flex-1 truncate" style={{ color: '#8888aa' }}>{site.mnsName}.{mnsPublicDomain}</span>
+                {site.ownershipClaimed && <ClaimedBadge compact />}
                 <span className="text-xs flex-shrink-0 basis-full sm:basis-auto pl-5 sm:pl-0 sm:ml-auto" style={{ color: '#4a4a6a' }}>No deployments</span>
               </div>
             ))}
@@ -179,7 +182,7 @@ function DeployRow({ d, faded = false }: { d: SiteDeployment; faded?: boolean })
           {src.label}
         </span>
         {d.commitSha && (
-          <span className="text-xs font-mono" style={{ color: '#4a4a6a' }}>{d.commitSha}</span>
+          <span className="text-xs font-mono" style={{ color: '#4a4a6a' }}>{d.commitSha.slice(0, 7)}</span>
         )}
         <span className="ml-auto text-xs" style={{ color: '#4a4a6a' }}>{timeAgo(d.createdAt)}</span>
       </div>

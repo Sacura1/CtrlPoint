@@ -17,6 +17,7 @@ model User {
   githubTokenIv   String?
   massaAddress    String?
   credits         Int      @default(3)
+  dailyCreditsResetAt DateTime?
   createdAt       DateTime @default(now())
 
   sites           Site[]
@@ -39,6 +40,9 @@ model Site {
   title         String     @default("My Site")
   description   String     @default("")
   needsDeploy   Boolean    @default(false)
+  ownershipClaimed Boolean  @default(false)
+  ownershipClaimedAt DateTime?
+  ownershipClaimedTo String?
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
 

@@ -8,7 +8,9 @@ const FEATURES = [
 ]
 
 export default function Landing() {
-  const { user } = useAuth()
+  const { user, loading } = useAuth()
+  const authTarget = user ? '/editor' : '/auth'
+  const registerTarget = user ? '/editor' : '/auth?mode=register'
 
   return (
     <div className="min-h-dvh flex flex-col overflow-x-hidden" style={{ background: '#05050d' }}>
@@ -28,17 +30,19 @@ export default function Landing() {
       <nav className="relative z-10 flex items-center justify-between px-6 sm:px-10 h-16"
         style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
         <img src="/logo.png" className="h-7 w-auto" alt="CtrlPoint" />
-        {user ? (
+        {loading ? (
+          <div className="w-20 h-9 rounded-xl" style={{ background: 'rgba(255,255,255,0.05)' }} />
+        ) : user ? (
           <Link to="/editor" className="btn-primary text-sm py-2 px-5">Open editor</Link>
         ) : (
           <div className="flex items-center gap-2">
-            <Link to="/auth" className="text-sm font-medium px-4 py-2 rounded-xl transition-all"
+            <Link to={authTarget} className="text-sm font-medium px-4 py-2 rounded-xl transition-all"
               style={{ color: 'rgba(200,200,224,0.7)', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)' }}
               onMouseEnter={e => { e.currentTarget.style.color = '#f0f0ff'; e.currentTarget.style.background = 'rgba(255,255,255,0.08)' }}
               onMouseLeave={e => { e.currentTarget.style.color = 'rgba(200,200,224,0.7)'; e.currentTarget.style.background = 'rgba(255,255,255,0.04)' }}>
               Log in
             </Link>
-            <Link to="/auth?mode=register" className="btn-primary text-sm py-2 px-5">Get started →</Link>
+            <Link to={registerTarget} className="btn-primary text-sm py-2 px-5">Get started →</Link>
           </div>
         )}
       </nav>
@@ -65,7 +69,7 @@ export default function Landing() {
         </p>
 
         <div className="flex flex-col sm:flex-row items-center gap-3 animate-slide-up" style={{ animationDelay: '0.2s' }}>
-          <Link to="/auth" className="btn-primary text-base px-8 py-3.5">
+          <Link to={authTarget} className="btn-primary text-base px-8 py-3.5">
             Start building free →
           </Link>
           <a href="https://massa.net" target="_blank" rel="noopener noreferrer"

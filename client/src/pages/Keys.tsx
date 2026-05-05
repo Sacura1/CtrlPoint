@@ -8,9 +8,13 @@ export default function Keys() {
   const [keyAdding, setKeyAdding] = useState<string | null>(null)
   const [keyRemoving, setKeyRemoving] = useState<string | null>(null)
   const [keyMsg, setKeyMsg] = useState<{ provider: string; ok: boolean; text: string } | null>(null)
+  const [loadingKeys, setLoadingKeys] = useState(true)
 
   useEffect(() => {
-    keysApi.list().then(({ keys }) => setSavedKeys(keys))
+    keysApi.list()
+      .then(({ keys }) => setSavedKeys(keys))
+      .catch(err => setKeyMsg({ provider: 'openai', ok: false, text: err.message }))
+      .finally(() => setLoadingKeys(false))
   }, [])
 
   const saveKey = async (provider: string) => {
@@ -75,12 +79,14 @@ export default function Keys() {
         <div className="rounded-2xl overflow-hidden"
           style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.09)' }}>
           <div className="px-5 py-5">
-            {(['openai', 'anthropic'] as const).map((provider, i) => {
+            {loadingKeys ? (
+              <KeysSkeleton />
+            ) : (['openai', 'anthropic'] as const).map((provider, i) => {
               const hasSaved = savedKeys[provider]
               const label = provider === 'openai' ? 'OpenAI' : 'Anthropic'
               const placeholder = provider === 'openai' ? 'sk-...' : 'sk-ant-...'
               const description = provider === 'openai'
-                ? 'Used for GPT-4o, GPT-5.3, GPT-5.4, and GPT-5.5 models'
+                ? 'Used for GPT-4o and GPT-5 models'
                 : 'Used for Claude Sonnet and Opus models'
               const msg = keyMsg?.provider === provider ? keyMsg : null
               return (
@@ -157,5 +163,26 @@ export default function Keys() {
 
       </main>
     </div>
+  )
+}
+
+function KeysSkeleton() {
+  return (
+    <>
+      {[0, 1].map(i => (
+        <div key={i}
+          className={i > 0 ? 'mt-6 pt-6' : ''}
+          style={i > 0 ? { borderTop: '1px solid rgba(255,255,255,0.07)' } : {}}>
+          <div className="flex items-start justify-between mb-3">
+            <div className="min-w-0 flex-1">
+              <div className="skeleton h-5 w-24 mb-2" />
+              <div className="skeleton h-4 w-64 max-w-full" />
+            </div>
+            <div className="skeleton h-7 w-16 rounded-lg flex-shrink-0" />
+          </div>
+          <div className="skeleton h-10 w-full rounded-xl" />
+        </div>
+      ))}
+    </>
   )
 }
