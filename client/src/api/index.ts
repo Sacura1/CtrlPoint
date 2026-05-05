@@ -109,6 +109,8 @@ export const github = {
     request<{ ok: boolean }>(`/github/connect/${siteId}`, { method: 'DELETE' }),
   disconnectAccount: () =>
     request<{ ok: boolean }>('/github/account', { method: 'DELETE' }),
+  redeploy: (siteId: string) =>
+    request<{ deploymentId: string }>(`/github/redeploy/${siteId}`, { method: 'POST' }),
 }
 
 // File upload

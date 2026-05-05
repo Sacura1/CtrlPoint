@@ -127,12 +127,17 @@ function parseBuildEnv(raw: string | null | undefined): NodeJS.ProcessEnv {
   if (!raw?.trim()) return {}
   const env: NodeJS.ProcessEnv = {}
 
-  for (const line of raw.split(/\r?\n/)) {
+  const normalized = raw
+    .replace(/\\n/g, '\n')
+    .replace(/\/n/g, '\n')
+    .replace(/--(?=vite_[a-z0-9_]+=)/gi, '\n')
+    .replace(/\s+(?=[A-Za-z_][A-Za-z0-9_]*=)/g, '\n')
+  for (const line of normalized.split(/\r?\n/)) {
     const trimmed = line.trim()
     if (!trimmed || trimmed.startsWith('#')) continue
     const eq = trimmed.indexOf('=')
     if (eq <= 0) throw new Error(`Invalid build env line "${trimmed}". Use KEY=value.`)
-    const key = trimmed.slice(0, eq).trim()
+    const key = trimmed.slice(0, eq).trim().toUpperCase()
     const value = trimmed.slice(eq + 1).trim()
     if (!/^[A-Z_][A-Z0-9_]*$/i.test(key)) throw new Error(`Invalid build env key "${key}".`)
     env[key] = value

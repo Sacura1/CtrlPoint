@@ -419,20 +419,70 @@ router.delete('/connect/:siteId', requireAuth, async (req: AuthRequest, res: Res
   } catch (err) { next(err) }
 })
 
+router.post('/redeploy/:siteId', requireAuth, async (req: AuthRequest, res: Response, next) => {
+  try {
+    const { siteId } = req.params as { siteId: string }
+    const connection = await prisma.gitHubConnection.findUnique({
+      where: { siteId },
+      include: { site: true },
+    })
+    if (!connection) throw new AppError(404, 'No GitHub connection found.')
+    if (connection.userId !== req.user!.userId) throw new AppError(403, 'Access denied.')
+    if (connection.site.ownershipClaimed) {
+      throw new AppError(409, 'This site has claimed ownership. Auto-deploy cannot update it.')
+    }
+
+    const active = await prisma.deployment.findFirst({
+      where: {
+        siteId,
+        status: { in: ['QUEUED', 'BUILDING', 'UPLOADING', 'MNS_REGISTERING'] },
+      },
+      select: { id: true },
+    })
+    if (active) throw new AppError(409, 'A deployment is already running for this site.')
+
+    await prisma.site.update({
+      where: { id: siteId },
+      data: { status: connection.site.scAddress ? 'UPDATING' : 'DEPLOYING' },
+    })
+
+    const deployment = await prisma.deployment.create({
+      data: {
+        siteId,
+        type: connection.site.scAddress ? 'UPDATE' : 'INITIAL',
+        status: 'QUEUED',
+        source: connection.site.scAddress ? 'github_push' : 'github_new',
+        step: 'Queued manual GitHub redeploy.',
+      },
+    })
+
+    res.json({ deploymentId: deployment.id })
+  } catch (err) { next(err) }
+})
+
 router.post('/webhook', async (req: Request, res: Response, next) => {
   try {
     const sig = req.headers['x-hub-signature-256'] as string
-    if (!sig || !cfg.githubWebhookSecret) { res.status(400).end(); return }
+    if (!sig || !cfg.githubWebhookSecret) {
+      console.warn('[github:webhook] rejected: missing signature or webhook secret')
+      res.status(400).end()
+      return
+    }
 
     const rawBody = req.body as Buffer
     const expected = 'sha256=' + crypto.createHmac('sha256', cfg.githubWebhookSecret).update(rawBody).digest('hex')
     if (sig.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) {
+      console.warn('[github:webhook] rejected: invalid signature')
       res.status(401).end()
       return
     }
 
     const event = req.headers['x-github-event']
-    if (event !== 'push') { res.status(200).end(); return }
+    if (event !== 'push') {
+      console.info('[github:webhook] ignored event', event)
+      res.status(200).end()
+      return
+    }
 
     const payload = JSON.parse(rawBody.toString('utf8'))
     const { ref, after: sha, repository } = payload
@@ -440,15 +490,25 @@ router.post('/webhook', async (req: Request, res: Response, next) => {
     const branch = (ref as string).replace('refs/heads/', '')
     const repoOwner: string = repository.owner.login
     const repoName: string = repository.name
+    console.info('[github:webhook] push', { repoOwner, repoName, branch, installationId, sha })
 
     const connection = await prisma.gitHubConnection.findFirst({
       where: { repoOwner, repoName, branch, ...(installationId ? { githubInstallationId: installationId } : {}) },
       include: { site: true, user: true },
     })
 
-    if (!connection) { res.status(200).end(); return }
-    if (connection.lastDeployedSha === sha) { res.status(200).end(); return }
+    if (!connection) {
+      console.warn('[github:webhook] no matching connection', { repoOwner, repoName, branch, installationId })
+      res.status(200).end()
+      return
+    }
+    if (connection.lastDeployedSha === sha) {
+      console.info('[github:webhook] skipped duplicate sha', { siteId: connection.siteId, sha })
+      res.status(200).end()
+      return
+    }
     if (connection.site.ownershipClaimed) {
+      console.info('[github:webhook] skipped claimed site', { siteId: connection.siteId })
       res.status(200).json({ ok: true, skipped: 'ownership_claimed' })
       return
     }
@@ -502,6 +562,7 @@ router.post('/webhook', async (req: Request, res: Response, next) => {
       },
     })
 
+    console.info('[github:webhook] queued deployment', { siteId: connection.siteId, sha })
     res.status(200).json({ ok: true, queued: true })
   } catch (err) { next(err) }
 })

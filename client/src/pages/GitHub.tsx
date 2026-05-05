@@ -19,6 +19,7 @@ export default function GitHub() {
   const [siteConnections, setSiteConnections] = useState<Record<string, any>>({})
   const [loadingConnections, setLoadingConnections] = useState(true)
   const [disconnectingGithub, setDisconnectingGithub] = useState(false)
+  const [redeployingSiteId, setRedeployingSiteId] = useState<string | null>(null)
 
   useEffect(() => {
     githubApi.status()
@@ -64,6 +65,25 @@ export default function GitHub() {
     if (repos.length === 0) loadRepos()
   }
 
+  const editConnection = (siteId: string) => {
+    const conn = siteConnections[siteId]
+    if (!conn) return
+    setConnectForm({
+      siteId,
+      repoOwner: conn.repoOwner,
+      repoName: conn.repoName,
+      githubInstallationId: conn.githubInstallationId,
+      branch: conn.branch || 'main',
+      projectType: conn.projectType || 'framework',
+      projectRoot: conn.projectRoot || '',
+      buildCommand: conn.buildCommand || 'npm run build',
+      outputDir: conn.outputDir || 'dist',
+      buildEnv: conn.buildEnv || '',
+    })
+    setConnectMsg(null)
+    if (repos.length === 0) loadRepos()
+  }
+
   const saveConnect = async () => {
     if (!connectForm) return
     setConnecting(true)
@@ -86,6 +106,19 @@ export default function GitHub() {
       setSiteConnections(prev => { const n = { ...prev }; delete n[siteId]; return n })
     } catch (err: any) {
       setConnectMsg({ ok: false, text: err.message })
+    }
+  }
+
+  const redeployRepo = async (siteId: string) => {
+    setRedeployingSiteId(siteId)
+    setConnectMsg(null)
+    try {
+      await githubApi.redeploy(siteId)
+      setConnectMsg({ ok: true, text: 'Redeploy queued. Check Deployments for progress.' })
+    } catch (err: any) {
+      setConnectMsg({ ok: false, text: err.message })
+    } finally {
+      setRedeployingSiteId(null)
     }
   }
 
@@ -223,13 +256,25 @@ export default function GitHub() {
                               Disabled
                             </button>
                           ) : conn ? (
-                            <button onClick={() => disconnectRepo(site.id)}
-                              className="text-xs flex-shrink-0 px-3 py-1.5 rounded-lg transition-all duration-200"
-                              style={{ color: 'rgba(248,113,113,0.6)', border: '1px solid rgba(248,113,113,0.15)', background: 'rgba(248,113,113,0.05)' }}
-                              onMouseEnter={e => { e.currentTarget.style.color = '#f87171'; e.currentTarget.style.borderColor = 'rgba(248,113,113,0.3)' }}
-                              onMouseLeave={e => { e.currentTarget.style.color = 'rgba(248,113,113,0.6)'; e.currentTarget.style.borderColor = 'rgba(248,113,113,0.15)' }}>
-                              Disconnect
-                            </button>
+                            <div className="flex flex-shrink-0 items-center gap-1.5">
+                              <button onClick={() => editConnection(site.id)}
+                                className="text-xs px-3 py-1.5 rounded-lg transition-all duration-200"
+                                style={{ color: '#a78bfa', border: '1px solid rgba(167,139,250,0.22)', background: 'rgba(124,58,237,0.08)' }}>
+                                Settings
+                              </button>
+                              <button onClick={() => redeployRepo(site.id)} disabled={redeployingSiteId === site.id}
+                                className="text-xs px-3 py-1.5 rounded-lg transition-all duration-200"
+                                style={{ color: '#34d399', border: '1px solid rgba(52,211,153,0.2)', background: 'rgba(52,211,153,0.07)' }}>
+                                {redeployingSiteId === site.id ? 'Queueing...' : 'Redeploy'}
+                              </button>
+                              <button onClick={() => disconnectRepo(site.id)}
+                                className="text-xs px-3 py-1.5 rounded-lg transition-all duration-200"
+                                style={{ color: 'rgba(248,113,113,0.6)', border: '1px solid rgba(248,113,113,0.15)', background: 'rgba(248,113,113,0.05)' }}
+                                onMouseEnter={e => { e.currentTarget.style.color = '#f87171'; e.currentTarget.style.borderColor = 'rgba(248,113,113,0.3)' }}
+                                onMouseLeave={e => { e.currentTarget.style.color = 'rgba(248,113,113,0.6)'; e.currentTarget.style.borderColor = 'rgba(248,113,113,0.15)' }}>
+                                Disconnect
+                              </button>
+                            </div>
                           ) : null}
                         </div>
                       </div>
@@ -250,7 +295,7 @@ export default function GitHub() {
               {connectForm && (
                 <div className="mt-4 p-4 rounded-xl animate-fade-in"
                   style={{ background: 'rgba(124,58,237,0.05)', border: '1px solid rgba(124,58,237,0.2)' }}>
-                  <p className="text-xs font-semibold text-ink-200 mb-4">Configure auto-deploy</p>
+                  <p className="text-xs font-semibold text-ink-200 mb-4">{siteConnections[connectForm.siteId] ? 'Update auto-deploy settings' : 'Configure auto-deploy'}</p>
 
                   <div className="mb-3">
                     <label className="text-xs mb-1.5 block" style={{ color: 'rgba(255,255,255,0.35)' }}>Repository</label>
