@@ -63,6 +63,19 @@ function parseScAddress(output: string): string {
   return match[0]
 }
 
+async function ensureSpaFallback(dirPath: string) {
+  const indexPath = path.join(dirPath, 'index.html')
+  const fallbackPath = path.join(dirPath, '404.html')
+  try {
+    await fs.access(indexPath)
+    await fs.access(fallbackPath)
+  } catch (err: any) {
+    if (err?.path === fallbackPath) {
+      await fs.copyFile(indexPath, fallbackPath)
+    }
+  }
+}
+
 export async function uploadDirectory(
   dirPath: string,
   title: string,
@@ -81,6 +94,7 @@ export async function uploadDirectory(
     },
   }
   await fs.writeFile(path.join(dirPath, 'website.json'), JSON.stringify(config), 'utf-8')
+  await ensureSpaFallback(dirPath)
 
   onProgress?.('Uploading to Massa chain...')
 

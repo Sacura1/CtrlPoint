@@ -309,11 +309,6 @@ export default function Deploy() {
                         <input className="input text-sm w-full font-mono" value={form.buildCommand}
                           onChange={e => setField('buildCommand', e.target.value)} placeholder="npm run build" />
                       </div>
-                      <div className="hidden">
-                        <FieldLabel label="Output Dir" tip="The folder your build writes into. Vite → 'dist', Create React App → 'build', Next.js static → 'out'. Must contain an index.html file." />
-                        <input className="input text-sm w-full font-mono" value={form.outputDir}
-                          onChange={e => setField('outputDir', e.target.value)} placeholder="dist" />
-                      </div>
                       <div>
                         <FieldLabel label="Build Env" tip="Optional KEY=value lines available during build. Use this for Vite variables like VITE_API_URL. Do not put secrets here because frontend build variables are public." />
                         <textarea className="input text-sm w-full font-mono resize-none leading-relaxed" rows={3}

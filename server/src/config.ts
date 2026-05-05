@@ -23,7 +23,23 @@ const defaultClientOrigins =
     ? ['https://www.ctrlpoint.dev', 'https://ctrlpoint.dev']
     : ['http://localhost:5173']
 
-const allowedOrigins = parseOrigins(process.env.CLIENT_URLS || process.env.CLIENT_URL, defaultClientOrigins)
+function uniqueOrigins(origins: string[]): string[] {
+  const seen = new Set<string>()
+  return origins.filter(origin => {
+    const normalized = normalizeOrigin(origin)
+    if (!normalized || seen.has(normalized)) return false
+    seen.add(normalized)
+    return true
+  })
+}
+
+const explicitClientUrl = process.env.CLIENT_URL ? normalizeOrigin(process.env.CLIENT_URL) : ''
+const extraClientOrigins = parseOrigins(process.env.CLIENT_URLS, [])
+const allowedOrigins = uniqueOrigins([
+  ...(explicitClientUrl ? [explicitClientUrl] : []),
+  ...extraClientOrigins,
+  ...defaultClientOrigins,
+])
 const mnsPublicDomain = normalizeHost(process.env.MNS_PUBLIC_DOMAIN || 'massahub.network')
 
 export const cfg = {
@@ -47,7 +63,7 @@ export const cfg = {
   stripeSecretKey: process.env.STRIPE_SECRET_KEY || '',
   stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET || '',
 
-  clientUrl: allowedOrigins[0],
+  clientUrl: explicitClientUrl || allowedOrigins[0],
   allowedOrigins,
   mnsPublicDomain: mnsPublicDomain || 'massahub.network',
   nodeEnv: process.env.NODE_ENV || 'development',

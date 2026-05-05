@@ -1,6 +1,24 @@
 import { User, Site, DeployStatus, CreditPackage } from '../types'
 
-export const API_ORIGIN = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '')
+function normalizeApiOrigin(raw: string | undefined): string {
+  if (!raw) return ''
+  let value = raw.trim().replace(/\\n/g, '\n').replace(/\/n(?=VITE_[A-Z0-9_]+=)/gi, '\n')
+  const embeddedEnvAt = value.search(/(?:\n|\s|--)(?=VITE_[A-Z0-9_]+=)/i)
+  if (embeddedEnvAt > 0) value = value.slice(0, embeddedEnvAt)
+  value = value.replace(/\/+$/, '')
+
+  if (!value) return ''
+  try {
+    const parsed = new URL(value)
+    if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('Invalid protocol')
+    return value
+  } catch {
+    console.error(`Invalid VITE_API_URL "${raw}". Use only the backend origin, for example https://api.example.com.`)
+    return value
+  }
+}
+
+export const API_ORIGIN = normalizeApiOrigin(import.meta.env.VITE_API_URL)
 const BASE = API_ORIGIN + '/api'
 
 export function apiUrl(path: string): string {
@@ -8,13 +26,35 @@ export function apiUrl(path: string): string {
   return BASE + normalized
 }
 
+async function parseResponse(res: Response): Promise<any> {
+  const text = await res.text()
+  if (!text) return {}
+  try {
+    return JSON.parse(text)
+  } catch {
+    if (!res.ok) return { error: text }
+    throw new Error('Server returned an invalid response.')
+  }
+}
+
+function apiConnectionError(err: unknown): Error {
+  if (err instanceof Error && err.message !== 'Failed to fetch') return err
+  const target = API_ORIGIN || window.location.origin
+  return new Error(`Could not reach the CtrlPoint API at ${target}. Check the frontend build env VITE_API_URL.`)
+}
+
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(apiUrl(url), {
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    ...options,
-  })
-  const data = await res.json()
+  let res: Response
+  try {
+    res = await fetch(apiUrl(url), {
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', ...options?.headers },
+      ...options,
+    })
+  } catch (err) {
+    throw apiConnectionError(err)
+  }
+  const data = await parseResponse(res)
   if (!res.ok) throw new Error(data.error || 'Request failed')
   return data
 }
@@ -118,12 +158,17 @@ export const upload = {
   file: async (file: File): Promise<{ html?: string; title?: string; multiFile?: boolean; message?: string }> => {
     const form = new FormData()
     form.append('file', file)
-    const res = await fetch(apiUrl('/upload'), {
-      method: 'POST',
-      credentials: 'include',
-      body: form,
-    })
-    const data = await res.json()
+    let res: Response
+    try {
+      res = await fetch(apiUrl('/upload'), {
+        method: 'POST',
+        credentials: 'include',
+        body: form,
+      })
+    } catch (err) {
+      throw apiConnectionError(err)
+    }
+    const data = await parseResponse(res)
     if (!res.ok) throw new Error(data.error || 'Upload failed')
     return data
   },

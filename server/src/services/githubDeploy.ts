@@ -137,9 +137,10 @@ function parseBuildEnv(raw: string | null | undefined): NodeJS.ProcessEnv {
     if (!trimmed || trimmed.startsWith('#')) continue
     const eq = trimmed.indexOf('=')
     if (eq <= 0) throw new Error(`Invalid build env line "${trimmed}". Use KEY=value.`)
-    const key = trimmed.slice(0, eq).trim().toUpperCase()
+    const rawKey = trimmed.slice(0, eq).trim()
+    const key = /^vite_/i.test(rawKey) ? rawKey.toUpperCase() : rawKey
     const value = trimmed.slice(eq + 1).trim()
-    if (!/^[A-Z_][A-Z0-9_]*$/i.test(key)) throw new Error(`Invalid build env key "${key}".`)
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) throw new Error(`Invalid build env key "${key}".`)
     env[key] = value
   }
 
@@ -181,13 +182,96 @@ function normalizeBuildCommand(buildCommand: string, pm: PackageManager): string
   const trimmed = (buildCommand || 'npm run build').trim()
   if (trimmed === 'npm run build' && pm === 'pnpm') return ['pnpm', 'run', 'build']
   if (trimmed === 'npm run build' && pm === 'yarn') return ['yarn', 'build']
-  return trimmed.split(/\s+/)
+  return splitCommandArgs(trimmed)
+}
+
+function splitCommandChain(buildCommand: string): string[] {
+  const trimmed = (buildCommand || 'npm run build').trim()
+  const commands: string[] = []
+  let current = ''
+  let quote: '"' | "'" | null = null
+
+  for (let i = 0; i < trimmed.length; i++) {
+    const ch = trimmed[i]
+    const next = trimmed[i + 1]
+
+    if (quote) {
+      current += ch
+      if (ch === quote) quote = null
+      continue
+    }
+
+    if (ch === '"' || ch === "'") {
+      quote = ch
+      current += ch
+      continue
+    }
+
+    if (ch === '&' && next === '&') {
+      if (current.trim()) commands.push(current.trim())
+      current = ''
+      i++
+      continue
+    }
+
+    if (ch === ';' || ch === '|' || ch === '<' || ch === '>') {
+      throw new Error('Build command only supports plain commands separated by &&.')
+    }
+
+    current += ch
+  }
+
+  if (quote) throw new Error('Build command has an unmatched quote.')
+  if (current.trim()) commands.push(current.trim())
+  return commands.length ? commands : ['npm run build']
+}
+
+function splitCommandArgs(command: string): string[] {
+  const args: string[] = []
+  let current = ''
+  let quote: '"' | "'" | null = null
+
+  for (let i = 0; i < command.length; i++) {
+    const ch = command[i]
+
+    if (quote) {
+      if (ch === quote) {
+        quote = null
+      } else {
+        current += ch
+      }
+      continue
+    }
+
+    if (ch === '"' || ch === "'") {
+      quote = ch
+      continue
+    }
+
+    if (/\s/.test(ch)) {
+      if (current) {
+        args.push(current)
+        current = ''
+      }
+      continue
+    }
+
+    current += ch
+  }
+
+  if (quote) throw new Error('Build command has an unmatched quote.')
+  if (current) args.push(current)
+  if (!args.length) throw new Error('Build command is empty.')
+  return args
 }
 
 async function runBuild(repoDir: string, buildCommand: string, pm: PackageManager, label: string, env: NodeJS.ProcessEnv) {
-  const [cmd, ...args] = normalizeBuildCommand(buildCommand, pm)
-  log(label, `Running build command: ${[cmd, ...args].join(' ')}`)
-  await runCommand(cmd, args, repoDir, 420_000, env)
+  const commands = splitCommandChain(buildCommand)
+  for (const command of commands) {
+    const [cmd, ...args] = normalizeBuildCommand(command, pm)
+    log(label, `Running build command: ${[cmd, ...args].join(' ')}`)
+    await runCommand(cmd, args, repoDir, 420_000, env)
+  }
 }
 
 async function resolveBuildDir(repoDir: string, configuredOutputDir: string): Promise<string> {
