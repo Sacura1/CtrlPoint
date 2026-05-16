@@ -3,6 +3,7 @@ import { PrismaClient } from '@prisma/client'
 import { uploadSite } from './massa'
 import { registerMns } from './mns'
 import { cfg } from '../config'
+import { refundMnsRegistrationCreditsForDeployment } from './credits'
 
 const prisma = new PrismaClient()
 
@@ -115,5 +116,12 @@ async function runDeploy(
       where: { id: params.siteId },
       data: { status: 'ERROR' },
     }).catch(() => {})
+    if (!params.isUpdate) {
+      const site = await prisma.site.findUnique({ where: { id: params.siteId }, select: { userId: true } }).catch(() => null)
+      if (site) {
+        await refundMnsRegistrationCreditsForDeployment(prisma, site.userId, params.mnsName, id)
+          .catch(refundErr => console.error(`[deploy:${id.slice(0, 8)}] refund failed:`, refundErr))
+      }
+    }
   }
 }

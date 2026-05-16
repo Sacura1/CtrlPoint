@@ -4,7 +4,8 @@ import { v4 as uuidv4 } from 'uuid'
 import { requireAuth } from '../middleware/auth'
 import { AppError } from '../middleware/errorHandler'
 import { AuthRequest } from '../types'
-import { checkMnsAvailable } from '../services/mns'
+import { checkMnsAvailable, mnsRegistrationCreditCost, mnsRegistrationMessage } from '../services/mns'
+import { applyDailyFreeCredits } from '../services/credits'
 import { cfg } from '../config'
 
 const router = Router()
@@ -16,11 +17,20 @@ router.get('/check-mns/:name', requireAuth, async (req: AuthRequest, res: Respon
   try {
     const name = req.params.name as string
     const available = await checkMnsAvailable(name)
-    res.json({ available })
+    const creditCost = mnsRegistrationCreditCost(name)
+    res.json({ available, creditCost, free: creditCost === 0, message: mnsRegistrationMessage(name) })
   } catch (err: any) {
     // Validation errors (bad format) → report as invalid; provider errors → assume available
     const isValidation = err.message?.includes('Name')
-    res.json({ available: isValidation ? false : true, error: isValidation ? err.message : undefined })
+    const name = req.params.name as string
+    const creditCost = isValidation ? 0 : mnsRegistrationCreditCost(name)
+    res.json({
+      available: isValidation ? false : true,
+      error: isValidation ? err.message : undefined,
+      creditCost,
+      free: creditCost === 0,
+      message: isValidation ? undefined : mnsRegistrationMessage(name),
+    })
   }
 })
 
@@ -64,27 +74,49 @@ router.post('/', requireAuth, async (req: AuthRequest, res: Response, next) => {
     }
 
     // Mark site as deploying
-    await prisma.site.update({
-      where: { id: siteId },
-      data: { status: isUpdate ? 'UPDATING' : 'DEPLOYING' },
-    })
-
-    // Create deployment record
     const deploymentId = uuidv4()
-    await prisma.deployment.create({
-      data: {
-        id: deploymentId,
-        siteId,
-        type: isUpdate ? 'UPDATE' : 'INITIAL',
-        status: 'QUEUED',
-        source: site.lastPrompt ? 'agent' : 'upload',
-        step: 'Queued',
-      },
+    const mnsCreditCost = !isUpdate ? mnsRegistrationCreditCost(site.mnsName) : 0
+    const user = mnsCreditCost > 0 ? await applyDailyFreeCredits(prisma, req.user!.userId) : null
+
+    await prisma.$transaction(async tx => {
+      if (mnsCreditCost > 0) {
+        const charged = await tx.user.updateMany({
+          where: { id: req.user!.userId, credits: { gte: mnsCreditCost } },
+          data: { credits: { decrement: mnsCreditCost } },
+        })
+        if (charged.count !== 1) {
+          throw new AppError(402, `Insufficient credits. Short MNS name "${site.mnsName}" costs ${mnsCreditCost.toLocaleString()} credits. You have ${user?.credits ?? 0}.`)
+        }
+        await tx.creditTransaction.create({
+          data: {
+            userId: req.user!.userId,
+            amount: -mnsCreditCost,
+            type: 'mns_registration',
+            note: `MNS registration for ${site.mnsName} (${deploymentId})`,
+          },
+        })
+      }
+
+      await tx.site.update({
+        where: { id: siteId },
+        data: { status: isUpdate ? 'UPDATING' : 'DEPLOYING' },
+      })
+      await tx.deployment.create({
+        data: {
+          id: deploymentId,
+          siteId,
+          type: isUpdate ? 'UPDATE' : 'INITIAL',
+          status: 'QUEUED',
+          source: site.lastPrompt ? 'agent' : 'upload',
+          step: 'Queued',
+        },
+      })
     })
 
     res.status(202).json({
       deploymentId,
       message: isUpdate ? 'Update started.' : 'Deployment started.',
+      creditsCharged: mnsCreditCost,
     })
   } catch (err) { next(err) }
 })

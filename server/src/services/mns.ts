@@ -1,6 +1,10 @@
 import { Account, JsonRpcProvider, MNS } from '@massalabs/massa-web3'
 import { cfg } from '../config'
 
+export const MIN_SPONSORED_MNS_NAME_LENGTH = 6
+const NANO_MAS_PER_MAS = 1_000_000_000n
+const MNS_STORAGE_BUFFER_NANO_MAS = 100_000_000n
+
 async function getProvider() {
   const account = await Account.fromPrivateKey(cfg.massaSecretKey)
   return cfg.massaNetwork === 'buildnet'
@@ -26,6 +30,24 @@ function validateMnsName(name: string): string | null {
   if (!/^[a-z0-9][a-z0-9-]*[a-z0-9]$/.test(name) && !/^[a-z0-9]$/.test(name))
     return 'Name can only contain lowercase letters, numbers, and hyphens, and cannot start or end with a hyphen.'
   return null
+}
+
+export function mnsRegistrationMasCost(name: string): number {
+  if (name.length <= 2) return 10_000
+  if (name.length === 3) return 1_000
+  if (name.length === 4) return 100
+  if (name.length === 5) return 10
+  return 1
+}
+
+export function mnsRegistrationCreditCost(name: string): number {
+  return name.length < MIN_SPONSORED_MNS_NAME_LENGTH ? mnsRegistrationMasCost(name) : 0
+}
+
+export function mnsRegistrationMessage(name: string): string {
+  const creditCost = mnsRegistrationCreditCost(name)
+  if (creditCost <= 0) return `${MIN_SPONSORED_MNS_NAME_LENGTH}+ character MNS names are free right now.`
+  return `Short MNS names cost ${creditCost.toLocaleString()} credit${creditCost === 1 ? '' : 's'}. ${MIN_SPONSORED_MNS_NAME_LENGTH}+ character names are free right now.`
 }
 
 export async function checkMnsAvailable(name: string): Promise<boolean> {
@@ -62,8 +84,9 @@ export async function registerMns(
   // Register under platform address (platform pays, platform owns for now)
   onProgress?.('Registering MNS domain...')
   const platformAddress = (await Account.fromPrivateKey(cfg.massaSecretKey)).address.toString()
-  // MNS alloc requires coins sent with the call to cover domain storage (~1.04 MAS)
-  const allocOp = await mns.alloc(name, platformAddress, { coins: 1100000000n })
+  // MNS alloc requires the registration fee plus a small storage buffer.
+  const coins = BigInt(mnsRegistrationMasCost(name)) * NANO_MAS_PER_MAS + MNS_STORAGE_BUFFER_NANO_MAS
+  const allocOp = await mns.alloc(name, platformAddress, { coins })
   await allocOp.waitFinalExecution()
 
   // Point MNS to the deployed website SC

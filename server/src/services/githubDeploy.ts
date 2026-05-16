@@ -86,7 +86,7 @@ async function createInstallationToken(installationId: string): Promise<string> 
   return data.token
 }
 
-async function fileExists(filePath: string): Promise<boolean> {
+export async function fileExists(filePath: string): Promise<boolean> {
   return fs.access(filePath).then(() => true).catch(() => false)
 }
 
@@ -113,7 +113,7 @@ async function runCommand(command: string, args: string[], cwd: string, timeout:
   }
 }
 
-function safeSubPath(value: string | undefined, fieldName: string): string {
+export function safeSubPath(value: string | undefined, fieldName: string): string {
   const normalized = (value || '').trim().replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/+$/, '')
   if (!normalized) return ''
   const parts = normalized.split('/')
@@ -123,7 +123,7 @@ function safeSubPath(value: string | undefined, fieldName: string): string {
   return normalized
 }
 
-function parseBuildEnv(raw: string | null | undefined): NodeJS.ProcessEnv {
+export function parseBuildEnv(raw: string | null | undefined): NodeJS.ProcessEnv {
   if (!raw?.trim()) return {}
   const env: NodeJS.ProcessEnv = {}
 
@@ -152,7 +152,7 @@ async function ensureCorepack(repoDir: string, pm: PackageManager) {
   await runCommand('corepack', ['enable'], repoDir, 60_000).catch(() => {})
 }
 
-async function installDependencies(repoDir: string, label: string): Promise<PackageManager> {
+export async function installDependencies(repoDir: string, label: string): Promise<PackageManager> {
   const pm = await detectPackageManager(repoDir)
   await ensureCorepack(repoDir, pm)
 
@@ -265,7 +265,7 @@ function splitCommandArgs(command: string): string[] {
   return args
 }
 
-async function runBuild(repoDir: string, buildCommand: string, pm: PackageManager, label: string, env: NodeJS.ProcessEnv) {
+export async function runBuild(repoDir: string, buildCommand: string, pm: PackageManager, label: string, env: NodeJS.ProcessEnv) {
   const commands = splitCommandChain(buildCommand)
   for (const command of commands) {
     const [cmd, ...args] = normalizeBuildCommand(command, pm)
@@ -274,7 +274,7 @@ async function runBuild(repoDir: string, buildCommand: string, pm: PackageManage
   }
 }
 
-async function resolveBuildDir(repoDir: string, configuredOutputDir: string): Promise<string> {
+export async function resolveBuildDir(repoDir: string, configuredOutputDir: string): Promise<string> {
   const configured = path.join(repoDir, configuredOutputDir || 'dist')
   if (await fileExists(path.join(configured, 'index.html'))) return configured
 
@@ -287,7 +287,7 @@ async function resolveBuildDir(repoDir: string, configuredOutputDir: string): Pr
   return configured
 }
 
-async function explainMissingIndex(repoDir: string, outputDir: string): Promise<string> {
+export async function explainMissingIndex(repoDir: string, outputDir: string): Promise<string> {
   const pkg = await readJson<{ dependencies?: Record<string, string>; devDependencies?: Record<string, string> }>(path.join(repoDir, 'package.json'))
   const deps = { ...(pkg?.dependencies || {}), ...(pkg?.devDependencies || {}) }
   const hasNext = Boolean(deps.next || await fileExists(path.join(repoDir, 'next.config.js')) || await fileExists(path.join(repoDir, 'next.config.mjs')))

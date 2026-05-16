@@ -11,6 +11,7 @@ import Keys from './pages/Keys'
 import Deployments from './pages/Deployments'
 import GitHub from './pages/GitHub'
 import Credits from './pages/Credits'
+import Agents from './pages/Agents'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth()
@@ -36,6 +37,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/" element={<Landing />} />
+      <Route path="/agents" element={<Agents />} />
       <Route path="/auth" element={<Auth />} />
       <Route path="/dashboard" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
       <Route path="/editor" element={<PrivateRoute><Editor /></PrivateRoute>} />

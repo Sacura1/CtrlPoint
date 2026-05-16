@@ -34,6 +34,30 @@ function userPayload(user: { id: string; email: string; credits: number; massaAd
   return { id: user.id, email: user.email, credits: user.credits, massaAddress: user.massaAddress }
 }
 
+router.post('/guest', async (_req: Request, res: Response, next) => {
+  try {
+    if (cfg.nodeEnv === 'production' && process.env.ENABLE_GUEST_LOGIN !== 'true') {
+      throw new AppError(403, 'Guest login is disabled.')
+    }
+
+    const suffix = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+    const user = await prisma.user.create({
+      data: {
+        email: `guest-${suffix}@ctrlpoint.local`,
+        credits: 3,
+        dailyCreditsResetAt: new Date(),
+      },
+    })
+    await prisma.creditTransaction.create({
+      data: { userId: user.id, amount: 3, type: 'guest_bonus', note: 'Guest testing credits' },
+    })
+
+    const token = signToken({ userId: user.id, email: user.email })
+    setCookie(res, token)
+    res.status(201).json({ user: userPayload(user), token })
+  } catch (err) { next(err) }
+})
+
 // ── Google OAuth ──────────────────────────────────────────────────────────────
 
 router.post('/google', async (req: Request, res: Response, next) => {
@@ -86,7 +110,7 @@ router.post('/google', async (req: Request, res: Response, next) => {
 
     const token = signToken({ userId: user.id, email: user.email })
     setCookie(res, token)
-    res.json({ user: userPayload(user) })
+    res.json({ user: userPayload(user), token })
   } catch (err) { next(err) }
 })
 
@@ -115,7 +139,7 @@ router.post('/register', async (req: Request, res: Response, next) => {
 
     const token = signToken({ userId: user.id, email: user.email })
     setCookie(res, token)
-    res.status(201).json({ user: userPayload(user) })
+    res.status(201).json({ user: userPayload(user), token })
   } catch (err) { next(err) }
 })
 
@@ -136,7 +160,7 @@ router.post('/login', async (req: Request, res: Response, next) => {
     const refreshedUser = await applyDailyFreeCredits(prisma, user.id) ?? user
     const token = signToken({ userId: refreshedUser.id, email: refreshedUser.email })
     setCookie(res, token)
-    res.json({ user: userPayload(refreshedUser) })
+    res.json({ user: userPayload(refreshedUser), token })
   } catch (err) { next(err) }
 })
 

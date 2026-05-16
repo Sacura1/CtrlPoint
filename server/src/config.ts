@@ -33,6 +33,11 @@ function uniqueOrigins(origins: string[]): string[] {
   })
 }
 
+function parseCsv(raw: string | undefined): string[] {
+  if (!raw) return []
+  return raw.split(',').map(v => v.trim()).filter(Boolean)
+}
+
 const explicitClientUrl = process.env.CLIENT_URL ? normalizeOrigin(process.env.CLIENT_URL) : ''
 const extraClientOrigins = parseOrigins(process.env.CLIENT_URLS, [])
 const allowedOrigins = uniqueOrigins([
@@ -62,8 +67,19 @@ export const cfg = {
 
   stripeSecretKey: process.env.STRIPE_SECRET_KEY || '',
   stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET || '',
+  billingProvider: (process.env.BILLING_PROVIDER || (process.env.POLAR_ACCESS_TOKEN ? 'polar' : 'stripe')) as 'polar' | 'stripe',
+  polarAccessToken: process.env.POLAR_ACCESS_TOKEN || '',
+  polarWebhookSecret: process.env.POLAR_WEBHOOK_SECRET || '',
+  polarEnvironment: (process.env.POLAR_ENVIRONMENT || 'production') as 'production' | 'sandbox',
+  polarProducts: {
+    starter: process.env.POLAR_STARTER_PRODUCT_ID || '',
+    builder: process.env.POLAR_BUILDER_PRODUCT_ID || '',
+    pro: process.env.POLAR_PRO_PRODUCT_ID || '',
+    studio: process.env.POLAR_STUDIO_PRODUCT_ID || '',
+  },
 
   clientUrl: explicitClientUrl || allowedOrigins[0],
+  apiPublicUrl: process.env.API_PUBLIC_URL || '',
   allowedOrigins,
   mnsPublicDomain: mnsPublicDomain || 'massahub.network',
   nodeEnv: process.env.NODE_ENV || 'development',
@@ -91,6 +107,22 @@ export const cfg = {
   deployWorkerStaticConcurrency: parseInt(process.env.DEPLOY_WORKER_STATIC_CONCURRENCY || '3'),
   deployWorkerFrameworkConcurrency: parseInt(process.env.DEPLOY_WORKER_FRAMEWORK_CONCURRENCY || '1'),
 
+  // Circle Gateway / x402 payments for agent-facing deploy endpoints
+  circleX402Enabled: process.env.CIRCLE_X402_ENABLED === 'true',
+  circleX402SellerAddress: process.env.CIRCLE_X402_SELLER_ADDRESS || '',
+  circleX402FacilitatorUrl: process.env.CIRCLE_X402_FACILITATOR_URL || (
+    process.env.CIRCLE_X402_ENVIRONMENT === 'testnet'
+      ? 'https://gateway-api-testnet.circle.com'
+      : 'https://gateway-api.circle.com'
+  ),
+  circleX402Networks: parseCsv(process.env.CIRCLE_X402_NETWORKS),
+  circleX402Prices: {
+    staticDeploy: process.env.CIRCLE_X402_STATIC_DEPLOY_PRICE || '$0.01',
+    frameworkDeploy: process.env.CIRCLE_X402_FRAMEWORK_DEPLOY_PRICE || '$0.01',
+    staticUpdate: process.env.CIRCLE_X402_STATIC_UPDATE_PRICE || '$0.001',
+    frameworkUpdate: process.env.CIRCLE_X402_FRAMEWORK_UPDATE_PRICE || '$0.001',
+  },
+
   // Credits cost per action
   credits: {
     deploy: 0,
@@ -112,5 +144,9 @@ export function validateConfig() {
 
   if (cfg.nodeEnv === 'production' && !/^[a-f0-9]{64}$/i.test(cfg.encryptionKey)) {
     throw new Error('ENCRYPTION_KEY must be a 32-byte hex string. Generate one with: openssl rand -hex 32')
+  }
+
+  if (cfg.circleX402Enabled && !cfg.circleX402SellerAddress) {
+    throw new Error('CIRCLE_X402_SELLER_ADDRESS is required when CIRCLE_X402_ENABLED=true')
   }
 }

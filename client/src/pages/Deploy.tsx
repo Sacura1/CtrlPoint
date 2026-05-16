@@ -4,6 +4,7 @@ import Header from '../components/Header'
 import UploadModal from '../components/UploadModal'
 import { apiUrl, deploy as deployApi, github as githubApi } from '../api'
 import { mnsPublicDomain } from '../utils/siteUrl'
+import { useAuth } from '../store/auth'
 
 type Tab = 'upload' | 'github' | null
 
@@ -22,6 +23,7 @@ interface GitHubForm {
 
 export default function Deploy() {
   const navigate = useNavigate()
+  const { user, setUser } = useAuth()
   const [tab, setTab] = useState<Tab>(null)
   const [showUpload, setShowUpload] = useState(false)
 
@@ -34,6 +36,8 @@ export default function Deploy() {
     projectType: 'static', projectRoot: '', buildCommand: 'npm run build', outputDir: 'dist', buildEnv: '',
   })
   const [mnsStatus, setMnsStatus] = useState<'idle' | 'checking' | 'available' | 'taken'>('idle')
+  const [mnsCreditCost, setMnsCreditCost] = useState(0)
+  const [mnsMessage, setMnsMessage] = useState('')
   const [deploying, setDeploying] = useState(false)
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
 
@@ -72,8 +76,10 @@ export default function Deploy() {
     if (!name) return
     setMnsStatus('checking')
     try {
-      const { available } = await deployApi.checkMns(name)
+      const { available, creditCost, message, error } = await deployApi.checkMns(name)
       setMnsStatus(available ? 'available' : 'taken')
+      setMnsCreditCost(creditCost || 0)
+      setMnsMessage(message || error || '')
     } catch {
       setMnsStatus('idle')
     }
@@ -81,20 +87,26 @@ export default function Deploy() {
 
   const setField = (k: keyof GitHubForm, v: string) => {
     setForm(f => ({ ...f, [k]: v }))
-    if (k === 'mnsName') setMnsStatus('idle')
+    if (k === 'mnsName') {
+      setMnsStatus('idle')
+      setMnsCreditCost(0)
+      setMnsMessage('')
+    }
   }
 
-  const canDeploy = form.mnsName && form.repoOwner && form.repoName && mnsStatus === 'available'
+  const hasEnoughMnsCredits = mnsCreditCost <= 0 || !user || user.credits >= mnsCreditCost
+  const canDeploy = form.mnsName && form.repoOwner && form.repoName && mnsStatus === 'available' && hasEnoughMnsCredits
 
   const deploy = async () => {
     if (!canDeploy) return
     setDeploying(true)
     setMsg(null)
     try {
-      const { mnsName } = await githubApi.deployNew({
+      const { creditsCharged } = await githubApi.deployNew({
         ...form,
         mnsName: form.mnsName.trim().toLowerCase(),
       })
+      if (creditsCharged && user) setUser({ ...user, credits: Math.max(0, user.credits - creditsCharged) })
       navigate('/dashboard')
     } catch (err: any) {
       setMsg({ ok: false, text: err.message })
@@ -242,6 +254,12 @@ export default function Deploy() {
                     )}
                     {mnsStatus === 'taken' && (
                       <p className="text-xs mt-1.5 font-medium text-red-400">✗ Already taken — try another name</p>
+                    )}
+                    {form.mnsName && mnsStatus !== 'checking' && (
+                      <p className={`text-xs mt-1.5 ${mnsCreditCost > 0 ? 'text-amber-300' : 'text-emerald-400'}`}>
+                        {mnsMessage || (form.mnsName.length >= 6 ? '6+ character MNS names are free right now.' : '')}
+                        {mnsCreditCost > 0 && user && user.credits < mnsCreditCost ? ` You have ${user.credits} credit${user.credits === 1 ? '' : 's'}.` : ''}
+                      </p>
                     )}
                   </div>
 

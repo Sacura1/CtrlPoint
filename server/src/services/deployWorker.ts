@@ -3,6 +3,7 @@ import { uploadSite } from './massa'
 import { registerMns } from './mns'
 import { deployGitHubSite } from './githubDeploy'
 import { cfg } from '../config'
+import { refundMnsRegistrationCreditsForDeployment } from './credits'
 
 const prisma = new PrismaClient()
 const ACTIVE_STATUSES = ['BUILDING', 'UPLOADING', 'MNS_REGISTERING']
@@ -147,6 +148,14 @@ async function processDeployment(deployment: DeploymentWithSite) {
     log(deployment.id, `Failed: ${errorMsg}`)
     await updateDeployment(deployment.id, { status: 'FAILED', step: 'Failed', errorMsg })
     await prisma.site.update({ where: { id: deployment.siteId }, data: { status: 'ERROR' } }).catch(() => {})
+    if (deployment.type === 'INITIAL' && deployment.site?.userId && deployment.site?.mnsName) {
+      await refundMnsRegistrationCreditsForDeployment(
+        prisma,
+        deployment.site.userId,
+        deployment.site.mnsName,
+        deployment.id
+      ).catch(refundErr => console.error(`[worker:${deployment.id.slice(0, 8)}] refund failed:`, refundErr))
+    }
   }
 }
 

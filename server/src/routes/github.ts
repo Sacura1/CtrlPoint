@@ -2,11 +2,12 @@ import { Router, Request, Response } from 'express'
 import { PrismaClient } from '@prisma/client'
 import { requireAuth } from '../middleware/auth'
 import { AppError } from '../middleware/errorHandler'
-import { AuthRequest } from '../types'
+import { AuthPayload, AuthRequest } from '../types'
 import { signToken } from '../middleware/auth'
 import { cfg } from '../config'
 import { encrypt, decrypt } from '../utils/encryption'
 import { applyDailyFreeCredits } from '../services/credits'
+import { checkMnsAvailable, mnsRegistrationCreditCost, validateMnsName } from '../services/mns'
 import crypto from 'crypto'
 import jwt from 'jsonwebtoken'
 
@@ -40,6 +41,35 @@ function ensureGitHubAppConfigured() {
   if (missing.length > 0) {
     const suffix = cfg.nodeEnv === 'production' ? '' : ` Missing: ${missing.join(', ')}.`
     throw new AppError(503, `GitHub App is not configured yet.${suffix}`)
+  }
+}
+
+function githubInstallUrl(state?: string) {
+  ensureGitHubAppConfigured()
+  const appSlug = cfg.githubAppName.trim().toLowerCase().replace(/\s+/g, '-')
+  const params = new URLSearchParams()
+  if (state) params.set('state', state)
+  const query = params.toString()
+  return `https://github.com/apps/${appSlug}/installations/new${query ? `?${query}` : ''}`
+}
+
+function authPayloadFromRequest(req: Request): AuthPayload | null {
+  const token = req.cookies?.token || req.headers.authorization?.replace('Bearer ', '') || ''
+  if (!token) return null
+  try {
+    return jwt.verify(token, cfg.jwtSecret) as AuthPayload
+  } catch {
+    return null
+  }
+}
+
+function authPayloadFromState(raw: unknown): AuthPayload | null {
+  const state = typeof raw === 'string' ? raw : ''
+  if (!state) return null
+  try {
+    return jwt.verify(state, cfg.jwtSecret) as AuthPayload
+  } catch {
+    return null
   }
 }
 
@@ -198,34 +228,41 @@ router.get('/callback', async (req: Request, res: Response, next) => {
 
 router.get('/install', requireAuth, (req: AuthRequest, res: Response, next) => {
   try {
-    ensureGitHubAppConfigured()
-    const appSlug = cfg.githubAppName.trim().toLowerCase().replace(/\s+/g, '-')
-    res.redirect(`https://github.com/apps/${appSlug}/installations/new`)
+    res.redirect(githubInstallUrl())
   } catch (err) { next(err) }
 })
 
-router.get('/setup', requireAuth, async (req: AuthRequest, res: Response, next) => {
+router.get('/install-url', requireAuth, (req: AuthRequest, res: Response, next) => {
+  try {
+    const state = signToken({ userId: req.user!.userId, email: req.user!.email })
+    res.json({ url: githubInstallUrl(state) })
+  } catch (err) { next(err) }
+})
+
+router.get('/setup', async (req: Request, res: Response, next) => {
   try {
     const installationId = String(req.query.installation_id || '')
     if (!installationId) throw new AppError(400, 'Missing GitHub installation id.')
+    const payload = authPayloadFromRequest(req) || authPayloadFromState(req.query.state)
+    if (!payload) throw new AppError(401, 'Authentication required')
 
     const installation = await githubAppFetch(`https://api.github.com/app/installations/${installationId}`) as any
     await prisma.gitHubInstallation.upsert({
       where: { installationId },
       create: {
-        userId: req.user!.userId,
+        userId: payload.userId,
         installationId,
         accountLogin: installation.account?.login,
         accountType: installation.account?.type,
       },
       update: {
-        userId: req.user!.userId,
+        userId: payload.userId,
         accountLogin: installation.account?.login,
         accountType: installation.account?.type,
       },
     })
 
-    res.redirect(`${cfg.clientUrl}/deploy?github=installed`)
+    res.redirect(req.query.state ? 'ctrlpoint://github-installed' : `${cfg.clientUrl}/deploy?github=installed`)
   } catch (err) { next(err) }
 })
 
@@ -298,10 +335,14 @@ router.post('/deploy-new', requireAuth, async (req: AuthRequest, res: Response, 
     const { mnsName, repoOwner, repoName, branch, projectType, projectRoot, buildCommand, outputDir, buildEnv, githubInstallationId } = req.body
 
     if (!mnsName || !repoOwner || !repoName) throw new AppError(400, 'mnsName, repoOwner and repoName are required.')
-    if (!/^[a-z0-9-]{3,32}$/.test(mnsName)) throw new AppError(400, 'MNS name must be 3-32 lowercase letters, numbers or hyphens.')
+    const validationError = validateMnsName(mnsName)
+    if (validationError) throw new AppError(400, validationError)
 
     const taken = await prisma.site.findUnique({ where: { mnsName } })
     if (taken) throw new AppError(409, 'That MNS name is already in use.')
+    const available = await checkMnsAvailable(mnsName).catch(() => true)
+    if (available === false)
+      throw new AppError(409, `The MNS name "${mnsName}" is already registered on Massa. Please choose a different name.`)
 
     const user = await prisma.user.findUnique({ where: { id: req.user!.userId } })
     if (!user) throw new AppError(404, 'User not found.')
@@ -317,45 +358,72 @@ router.post('/deploy-new', requireAuth, async (req: AuthRequest, res: Response, 
       sha = ref.object?.sha || 'initial'
     } catch {}
 
-    const site = await prisma.site.create({
-      data: {
-        userId: req.user!.userId,
-        mnsName,
-        title: `${repoOwner}/${repoName}`,
-        description: `Deployed from GitHub: ${repoOwner}/${repoName}@${branchName}`,
-        generatedCode: `<!-- GitHub: ${repoOwner}/${repoName}@${branchName} -->`,
-        status: 'DEPLOYING',
-      },
+    const mnsCreditCost = mnsRegistrationCreditCost(mnsName)
+    const refreshedUser = mnsCreditCost > 0 ? await applyDailyFreeCredits(prisma, req.user!.userId) : null
+    const result = await prisma.$transaction(async tx => {
+      if (mnsCreditCost > 0) {
+        const charged = await tx.user.updateMany({
+          where: { id: req.user!.userId, credits: { gte: mnsCreditCost } },
+          data: { credits: { decrement: mnsCreditCost } },
+        })
+        if (charged.count !== 1) {
+          throw new AppError(402, `Insufficient credits. Short MNS name "${mnsName}" costs ${mnsCreditCost.toLocaleString()} credits. You have ${refreshedUser?.credits ?? 0}.`)
+        }
+      }
+
+      const site = await tx.site.create({
+        data: {
+          userId: req.user!.userId,
+          mnsName,
+          title: `${repoOwner}/${repoName}`,
+          description: `Deployed from GitHub: ${repoOwner}/${repoName}@${branchName}`,
+          generatedCode: `<!-- GitHub: ${repoOwner}/${repoName}@${branchName} -->`,
+          status: 'DEPLOYING',
+        },
+      })
+
+      await tx.gitHubConnection.create({
+        data: {
+          siteId: site.id,
+          userId: req.user!.userId,
+          githubInstallationId: installationId,
+          repoOwner,
+          repoName,
+          branch: branchName,
+          projectType: projectType || 'static',
+          projectRoot: projectRoot || '',
+          buildCommand: buildCommand || 'npm run build',
+          outputDir: outputDir || 'dist',
+          buildEnv: buildEnv || null,
+        },
+      })
+
+      const deployment = await tx.deployment.create({
+        data: {
+          siteId: site.id,
+          type: 'INITIAL',
+          status: 'QUEUED',
+          source: 'github_new',
+          commitSha: sha !== 'initial' ? sha : undefined,
+          step: 'Queued',
+        },
+      })
+
+      if (mnsCreditCost > 0) {
+        await tx.creditTransaction.create({
+          data: {
+            userId: req.user!.userId,
+            amount: -mnsCreditCost,
+            type: 'mns_registration',
+            note: `MNS registration for ${mnsName} (${deployment.id})`,
+          },
+        })
+      }
+
+      return { site, deployment }
     })
 
-    const connection = await prisma.gitHubConnection.create({
-      data: {
-        siteId: site.id,
-        userId: req.user!.userId,
-        githubInstallationId: installationId,
-        repoOwner,
-        repoName,
-        branch: branchName,
-        projectType: projectType || 'static',
-        projectRoot: projectRoot || '',
-        buildCommand: buildCommand || 'npm run build',
-        outputDir: outputDir || 'dist',
-        buildEnv: buildEnv || null,
-      },
-    })
-
-    const deployment = await prisma.deployment.create({
-      data: {
-        siteId: site.id,
-        type: 'INITIAL',
-        status: 'QUEUED',
-        source: 'github_new',
-        commitSha: sha !== 'initial' ? sha : undefined,
-        step: 'Queued',
-      },
-    })
-
-    res.json({ siteId: site.id, mnsName, deploymentId: deployment.id })
+    res.json({ siteId: result.site.id, mnsName, deploymentId: result.deployment.id, creditsCharged: mnsCreditCost })
   } catch (err) { next(err) }
 })
 

@@ -1,10 +1,19 @@
 import { Link } from 'react-router-dom'
 import { useAuth } from '../store/auth'
 
+const API_URL = (import.meta.env.VITE_API_URL || 'https://ctrlpoint-api.fly.dev').replace(/\/+$/, '')
+
 const FEATURES = [
-  { icon: <ChainIcon />, label: 'Truly on-chain' },
-  { icon: <DomainIcon />, label: 'Your domain' },
-  { icon: <AiIcon />,    label: 'AI-powered' },
+  ['AI Builder', 'Describe a website and edit it in the browser.'],
+  ['Massa DeWeb', 'Publish to decentralized hosting with an MNS name.'],
+  ['Agent API', 'Let autonomous agents pay with x402 and deploy.'],
+]
+
+const METHODS = [
+  ['Build', 'Use the editor to generate and refine a web app.'],
+  ['Upload', 'Deploy an existing static site or built artifact.'],
+  ['GitHub', 'Connect a repo for repeatable deploys.'],
+  ['Agents', 'Expose deployment as a paid machine-readable API.'],
 ]
 
 export default function Landing() {
@@ -13,121 +22,122 @@ export default function Landing() {
   const registerTarget = user ? '/editor' : '/auth?mode=register'
 
   return (
-    <div className="min-h-dvh flex flex-col overflow-x-hidden" style={{ background: '#05050d' }}>
-
-      {/* Ambient orbs */}
-      <div className="fixed inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute top-[-20%] left-[10%] w-[600px] h-[600px] rounded-full opacity-20 animate-orb-pulse"
-          style={{ background: 'radial-gradient(circle, rgba(124,58,237,0.4) 0%, transparent 70%)', filter: 'blur(60px)' }} />
-        <div className="absolute top-[20%] right-[-10%] w-[400px] h-[400px] rounded-full opacity-15 animate-float-slow"
-          style={{ background: 'radial-gradient(circle, rgba(139,92,246,0.3) 0%, transparent 70%)', filter: 'blur(80px)' }} />
-        <div className="absolute bottom-[-10%] left-[30%] w-[500px] h-[300px] rounded-full opacity-10"
-          style={{ background: 'radial-gradient(circle, rgba(109,40,217,0.5) 0%, transparent 70%)', filter: 'blur(100px)' }} />
-        <div className="fixed inset-0 bg-grid-pattern bg-grid" />
-      </div>
-
-      {/* Nav */}
-      <nav className="relative z-10 flex items-center justify-between px-6 sm:px-10 h-16"
-        style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-        <img src="/logo.png" className="h-7 w-auto" alt="CtrlPoint" />
-        {loading ? (
-          <div className="w-20 h-9 rounded-xl" style={{ background: 'rgba(255,255,255,0.05)' }} />
-        ) : user ? (
-          <Link to="/editor" className="btn-primary text-sm py-2 px-5">Open editor</Link>
-        ) : (
-          <div className="flex items-center gap-2">
-            <Link to={authTarget} className="text-sm font-medium px-4 py-2 rounded-xl transition-all"
-              style={{ color: 'rgba(200,200,224,0.7)', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)' }}
-              onMouseEnter={e => { e.currentTarget.style.color = '#f0f0ff'; e.currentTarget.style.background = 'rgba(255,255,255,0.08)' }}
-              onMouseLeave={e => { e.currentTarget.style.color = 'rgba(200,200,224,0.7)'; e.currentTarget.style.background = 'rgba(255,255,255,0.04)' }}>
-              Log in
-            </Link>
-            <Link to={registerTarget} className="btn-primary text-sm py-2 px-5">Get started →</Link>
-          </div>
-        )}
-      </nav>
-
-      {/* Hero */}
-      <main className="relative z-10 flex-1 flex flex-col items-center justify-center text-center px-6 pt-12 pb-24 sm:pt-20">
-
-        {/* <div className="inline-flex items-center gap-2 mb-8 px-4 py-1.5 rounded-full text-xs font-medium animate-fade-in"
-          style={{ background: 'rgba(124,58,237,0.12)', border: '1px solid rgba(124,58,237,0.25)', color: '#a78bfa' }}>
-          <span className="w-1.5 h-1.5 rounded-full bg-brand-400 animate-pulse-dot" />
-          Deployed on Massa DeWeb · Mainnet
-        </div> */}
-
-        <h1 className="text-5xl sm:text-7xl lg:text-8xl font-black tracking-tight leading-[0.95] mb-6 animate-slide-up"
-            style={{ animationDelay: '0.05s' }}>
-          <span className="text-gradient">Build once.</span>
-          <br />
-          <span className="text-ink-50">Live forever.</span>
-        </h1>
-
-        <p className="text-ink-400 text-lg sm:text-xl mb-10 max-w-sm animate-slide-up"
-           style={{ animationDelay: '0.12s' }}>
-          Describe your site. AI builds it. One click puts it on the blockchain.
-        </p>
-
-        <div className="flex flex-col sm:flex-row items-center gap-3 animate-slide-up" style={{ animationDelay: '0.2s' }}>
-          <Link to={authTarget} className="btn-primary text-base px-8 py-3.5">
-            Start building free →
-          </Link>
-          <a href="https://massa.net" target="_blank" rel="noopener noreferrer"
-            className="text-sm text-ink-600 hover:text-ink-400 transition-colors">
-            What is Massa? ↗
-          </a>
+    <div className="min-h-dvh overflow-x-hidden bg-[#05050d] text-[#f7f3ff]">
+      <header className="relative z-20 border-b border-white/[0.06]">
+        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
+          <img src="/logo.png" className="h-7 w-auto" alt="CtrlPoint" />
+          {loading ? (
+            <div className="h-9 w-20 rounded-xl bg-white/[0.05]" />
+          ) : user ? (
+            <nav className="flex items-center gap-2">
+              <Link to="/agents" className="hidden rounded-xl px-3 py-2 text-sm font-semibold text-[#b9b2d7] transition hover:text-white sm:inline-flex">
+                Agents
+              </Link>
+              <a href={`${API_URL}/api/agent/capabilities`} target="_blank" rel="noopener noreferrer"
+                className="hidden rounded-xl px-3 py-2 text-sm font-semibold text-[#b9b2d7] transition hover:text-white md:inline-flex">
+                Capabilities
+              </a>
+              <Link to="/editor" className="btn-primary px-4 py-2 text-sm sm:px-5">Open editor</Link>
+            </nav>
+          ) : (
+            <nav className="flex items-center gap-2">
+              <Link to="/agents" className="hidden rounded-xl px-3 py-2 text-sm font-semibold text-[#b9b2d7] transition hover:text-white sm:inline-flex">
+                Agents
+              </Link>
+              <a href={`${API_URL}/api/agent/capabilities`} target="_blank" rel="noopener noreferrer"
+                className="hidden rounded-xl px-3 py-2 text-sm font-semibold text-[#b9b2d7] transition hover:text-white md:inline-flex">
+                Capabilities
+              </a>
+              <Link to={authTarget} className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-semibold text-[#d9d2f0] transition hover:bg-white/[0.08] sm:px-4">
+                Log in
+              </Link>
+              <Link to={registerTarget} className="btn-primary px-4 py-2 text-sm">Get started</Link>
+            </nav>
+          )}
         </div>
+      </header>
 
-        {/* Feature chips */}
-        <div className="mt-16 flex flex-wrap justify-center gap-2.5 animate-fade-in" style={{ animationDelay: '0.35s' }}>
-          {FEATURES.map(f => (
-            <div key={f.label} className="flex items-center gap-2 px-4 py-2 rounded-full text-ink-400 text-sm transition-all duration-200 hover:text-ink-200 cursor-default"
-              style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
-              {f.icon}
-              {f.label}
+      <main>
+        <section className="relative">
+          <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_50%_-10%,rgba(139,92,246,0.24),transparent_42%),radial-gradient(circle_at_15%_40%,rgba(16,185,129,0.10),transparent_30%)]" />
+          <div className="relative mx-auto grid min-h-[calc(100dvh-64px)] max-w-6xl content-center gap-10 px-4 py-12 sm:px-6 lg:grid-cols-[1fr_0.82fr] lg:items-center">
+            <div className="text-center lg:text-left">
+              <div className="mb-5 inline-flex rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs font-bold uppercase tracking-[0.12em] text-[#c4b5fd]">
+                AI web apps on Massa DeWeb
+              </div>
+              <h1 className="mx-auto max-w-4xl text-[2.7rem] font-black leading-[0.98] sm:text-6xl lg:mx-0 lg:text-7xl">
+                Build, deploy, and keep websites alive onchain.
+              </h1>
+              <p className="mx-auto mt-5 max-w-xl text-base leading-7 text-[#aaa3c7] sm:text-lg lg:mx-0">
+                CtrlPoint turns prompts, uploads, GitHub repos, and agent requests into live Massa DeWeb sites with update paths built in.
+              </p>
+              <div className="mt-8 mb-6 flex flex-col items-center justify-center gap-3 sm:flex-row lg:items-start lg:justify-start">
+                <Link to={authTarget} className="btn-primary max-w-[220px] px-5 py-3.5 text-center text-base sm:max-w-none sm:px-7">
+                  Start building free
+                </Link>
+                <Link to="/agents" className="max-w-[220px] whitespace-normal rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-3.5 text-center text-sm font-bold leading-5 text-[#d9d2f0] transition hover:bg-white/[0.08] sm:max-w-none sm:px-7">
+                  Agent deploy API
+                </Link>
+              </div>
             </div>
-          ))}
-        </div>
+
+            <div className="mx-auto w-full max-w-md rounded-[8px] border border-white/10 bg-[#0a0912] p-3 shadow-2xl shadow-black/35">
+              <div className="grid gap-2">
+                {METHODS.map(([title, text]) => (
+                  <div key={title} className="rounded-[8px] border border-white/10 bg-white/[0.035] p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <h2 className="text-sm font-black">{title}</h2>
+                        <p className="mt-1 text-xs leading-5 text-[#9d95ba]">{text}</p>
+                      </div>
+                      <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-[#8b5cf6]" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="border-y border-white/10 bg-white/[0.025]">
+          <div className="mx-auto grid max-w-6xl gap-3 px-4 py-9 sm:grid-cols-3 sm:px-6">
+            {FEATURES.map(([title, text]) => (
+              <div key={title} className="rounded-[8px] border border-white/10 bg-[#0a0912] p-5">
+                <h2 className="text-lg font-black">{title}</h2>
+                <p className="mt-2 text-sm leading-6 text-[#9d95ba]">{text}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="mx-auto grid max-w-6xl gap-6 px-4 py-12 sm:px-6 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
+          <div>
+            <h2 className="text-2xl font-black sm:text-3xl">Now available for autonomous agents.</h2>
+            <p className="mt-3 leading-7 text-[#9d95ba]">
+              Agents can discover CtrlPoint through JSON capabilities, pay tiny USDC fees through Circle x402 on Arc, and deploy to Massa DeWeb without creating a CtrlPoint account.
+            </p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <LogoTile src="/circle.svg" alt="Circle" width={118} height={30} />
+            <LogoTile src="/arc.svg" alt="Arc" width={38} height={40} />
+            <LogoTile src="/massa-white.svg" alt="Massa" width={128} height={24} />
+          </div>
+        </section>
       </main>
 
-      <footer className="relative z-10 text-center text-ink-600 text-xs py-6"
-        style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
-        © 2025 CtrlPoint ·{' '}
-        <a href="https://massa.net" target="_blank" rel="noopener noreferrer"
-           className="hover:text-ink-400 transition-colors">Built on Massa</a>
+      <footer className="border-t border-white/[0.06] py-6 text-center text-xs text-[#746d91]">
+        2026 CtrlPoint · Built on Massa & Circle
       </footer>
     </div>
   )
 }
 
-function ChainIcon() {
+function LogoTile({ src, alt, width, height }: { src: string; alt: string; width: number; height: number }) {
   return (
-    <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
-      <path d="M5.5 8.5l-2-2a2.12 2.12 0 010-3l1-1a2.12 2.12 0 013 0l2 2M8.5 5.5l2 2a2.12 2.12 0 010 3l-1 1a2.12 2.12 0 01-3 0l-2-2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
-    </svg>
-  )
-}
-function DomainIcon() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
-      <circle cx="7" cy="7" r="5.5" stroke="currentColor" strokeWidth="1.3"/>
-      <path d="M7 1.5C7 1.5 5 4 5 7s2 5.5 2 5.5M7 1.5C7 1.5 9 4 9 7s-2 5.5-2 5.5M1.5 7h11" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
-    </svg>
-  )
-}
-function AiIcon() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
-      <path d="M7 1v2M7 11v2M1 7h2M11 7h2M3 3l1.5 1.5M9.5 9.5L11 11M11 3l-1.5 1.5M4.5 9.5L3 11" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
-      <circle cx="7" cy="7" r="2" stroke="currentColor" strokeWidth="1.3"/>
-    </svg>
-  )
-}
-function CardIcon() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
-      <rect x="1.5" y="3.5" width="11" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.3"/>
-      <path d="M1.5 6h11" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
-    </svg>
+    <div className="flex h-14 min-w-0 items-center justify-center rounded-[8px] border border-white/10 bg-white/[0.04] px-3">
+      <span className="block max-w-full" style={{ width, height }}>
+        <img src={src} alt={alt} className="block h-full w-full object-contain" />
+      </span>
+    </div>
   )
 }

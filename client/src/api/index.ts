@@ -130,9 +130,9 @@ export const sites = {
 // Deploy
 export const deploy = {
   checkMns: (name: string) =>
-    request<{ available: boolean; error?: string }>(`/deploy/check-mns/${name}`),
+    request<{ available: boolean; error?: string; creditCost: number; free: boolean; message?: string }>(`/deploy/check-mns/${name}`),
   start: (siteId: string) =>
-    request<{ deploymentId: string }>('/deploy', { method: 'POST', body: JSON.stringify({ siteId }) }),
+    request<{ deploymentId: string; creditsCharged?: number }>('/deploy', { method: 'POST', body: JSON.stringify({ siteId }) }),
   status: (deploymentId: string) => request<DeployStatus>(`/deploy/status/${deploymentId}`),
 }
 
@@ -142,7 +142,7 @@ export const github = {
   repos: () => request<{ repos: any[] }>('/github/repos'),
   connection: (siteId: string) => request<any>(`/github/connection/${siteId}`).catch(() => null),
   deployNew: (data: { mnsName: string; repoOwner: string; repoName: string; branch: string; projectType: string; projectRoot?: string; buildCommand: string; outputDir: string; buildEnv?: string; githubInstallationId?: string }) =>
-    request<{ siteId: string; mnsName: string }>('/github/deploy-new', { method: 'POST', body: JSON.stringify(data) }),
+    request<{ siteId: string; mnsName: string; creditsCharged?: number }>('/github/deploy-new', { method: 'POST', body: JSON.stringify(data) }),
   connect: (data: { siteId: string; repoOwner: string; repoName: string; branch: string; projectType: string; projectRoot?: string; buildCommand: string; outputDir: string; buildEnv?: string; githubInstallationId?: string }) =>
     request<{ connection: any }>('/github/connect', { method: 'POST', body: JSON.stringify(data) }),
   disconnect: (siteId: string) =>

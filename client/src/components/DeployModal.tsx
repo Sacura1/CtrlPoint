@@ -3,6 +3,7 @@ import { deploy as deployApi, sites as sitesApi } from '../api'
 import { DeployStatus, Site } from '../types'
 import { mnsPublicDomain } from '../utils/siteUrl'
 import ClaimedBadge, { claimedOwnershipMessage } from './ClaimedBadge'
+import { useAuth } from '../store/auth'
 
 interface Props {
   generatedCode: string
@@ -27,8 +28,11 @@ const STEPS: Record<string, string> = {
 const STEP_ORDER = ['QUEUED', 'BUILDING', 'UPLOADING', 'MNS_REGISTERING', 'COMPLETE']
 
 export default function DeployModal({ generatedCode, title, description, lastPrompt, existingSite, onClose, onDeployed, onLive }: Props) {
+  const { user, setUser } = useAuth()
   const [mnsName, setMnsName]        = useState(existingSite?.mnsName ?? '')
   const [mnsAvailable, setAvailable] = useState<boolean | null>(null)
+  const [mnsCreditCost, setMnsCreditCost] = useState(0)
+  const [mnsMessage, setMnsMessage] = useState('')
   const [checking, setChecking]      = useState(false)
   const [deploying, setDeploying]    = useState(false)
   const [deploymentId, setDepId]     = useState<string | null>(null)
@@ -43,11 +47,15 @@ export default function DeployModal({ generatedCode, title, description, lastPro
   useEffect(() => {
     if (!mnsName || mnsName.length < 2 || isUpdate) return
     setAvailable(null)
+    setMnsCreditCost(0)
+    setMnsMessage('')
     setChecking(true)
     const t = setTimeout(async () => {
       try {
         const r = await deployApi.checkMns(mnsName)
         setAvailable(r.available)
+        setMnsCreditCost(r.creditCost || 0)
+        setMnsMessage(r.message || r.error || '')
       } catch { setAvailable(false) }
       finally { setChecking(false) }
     }, 600)
@@ -90,7 +98,8 @@ export default function DeployModal({ generatedCode, title, description, lastPro
         const { site } = await sitesApi.updateDraft(siteId, { mnsName, generatedCode, title, description, lastPrompt })
         onDeployed(site)
       }
-      const { deploymentId: id } = await deployApi.start(siteId)
+      const { deploymentId: id, creditsCharged } = await deployApi.start(siteId)
+      if (creditsCharged && user) setUser({ ...user, credits: Math.max(0, user.credits - creditsCharged) })
       setDepId(id)
     } catch (err: any) {
       setError(err.message)
@@ -99,7 +108,8 @@ export default function DeployModal({ generatedCode, title, description, lastPro
   }
 
   const nameValid = /^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$/.test(mnsName) && mnsName.length >= 2
-  const canDeploy = isClaimed ? false : isUpdate ? !deploying : (nameValid && mnsAvailable === true && !deploying)
+  const hasEnoughMnsCredits = isUpdate || mnsCreditCost <= 0 || !user || user.credits >= mnsCreditCost
+  const canDeploy = isClaimed ? false : isUpdate ? !deploying : (nameValid && mnsAvailable === true && hasEnoughMnsCredits && !deploying)
   const isDone    = status?.status === 'COMPLETE' || status?.status === 'FAILED'
   const currentStepIdx = STEP_ORDER.indexOf(status?.status ?? 'QUEUED')
 
@@ -178,6 +188,12 @@ export default function DeployModal({ generatedCode, title, description, lastPro
                       → {mnsName}.{mnsPublicDomain}
                     </p>
                   )}
+                  {mnsName && !checking && (
+                    <p className={`text-xs mt-2 ${mnsCreditCost > 0 ? 'text-amber-300' : 'text-emerald-400'}`}>
+                      {mnsMessage || (mnsName.length >= 6 ? '6+ character MNS names are free right now.' : '')}
+                      {mnsCreditCost > 0 && user && user.credits < mnsCreditCost ? ` You have ${user.credits} credit${user.credits === 1 ? '' : 's'}.` : ''}
+                    </p>
+                  )}
                 </div>
               ) : (
                 <div className="rounded-xl px-4 py-3" style={{ background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.15)' }}>
@@ -202,7 +218,7 @@ export default function DeployModal({ generatedCode, title, description, lastPro
               {/* Deploy note */}
               <div className="py-3"
                 style={{ borderTop: '1px solid rgba(255,255,255,0.06)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-                <p className="text-sm text-ink-600">Deployments are free. Credits are only used for AI generation and edits.</p>
+                <p className="text-sm text-ink-600">6+ character MNS names are free right now. Shorter names use credits before deployment starts.</p>
               </div>
 
               {/* Error */}

@@ -15,6 +15,7 @@ import billingRoutes from './routes/billing'
 import keysRoutes from './routes/keys'
 import uploadRoutes from './routes/upload'
 import githubRoutes from './routes/github'
+import agentRoutes from './routes/agent'
 import { startDeployWorker } from './services/deployWorker'
 import { CLAUDE_REASONING_EFFORTS, MODEL_CATALOG, OPENAI_REASONING_EFFORTS } from './services/ai'
 
@@ -41,6 +42,7 @@ app.use(cookieParser())
 
 // Raw body for webhook signature verification
 app.use('/api/billing/webhook', express.raw({ type: 'application/json' }))
+app.use('/api/billing/polar/webhook', express.raw({ type: 'application/json' }))
 app.use('/api/github/webhook', express.raw({ type: 'application/json' }))
 app.use(express.json({ limit: '10mb' }))
 
@@ -64,6 +66,7 @@ app.use('/api/billing', billingRoutes)
 app.use('/api/keys', keysRoutes)
 app.use('/api/upload', uploadRoutes)
 app.use('/api/github', githubRoutes)
+app.use('/api/agent', agentRoutes)
 
 // Health check
 app.get('/api/health', (_, res) => res.json({ ok: true, env: cfg.nodeEnv }))

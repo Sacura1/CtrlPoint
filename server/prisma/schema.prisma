@@ -23,6 +23,8 @@ model User {
   sites           Site[]
   transactions    CreditTransaction[]
   apiKeys         UserApiKey[]
+  agentApiKeys    AgentApiKey[]
+  agentRequests   AgentRequest[]
   githubConnections GitHubConnection[]
   githubInstallations GitHubInstallation[]
 }
@@ -118,4 +120,43 @@ model UserApiKey {
   updatedAt    DateTime @updatedAt
 
   @@unique([userId, provider])
+}
+
+model AgentApiKey {
+  id           String    @id @default(cuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name         String
+  keyHash      String    @unique
+  keyPrefix    String
+  lastUsedAt   DateTime?
+  revokedAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([keyPrefix])
+}
+
+model AgentRequest {
+  id             String    @id @default(cuid())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  idempotencyKey String
+  requestHash    String
+  status         String    @default("IN_PROGRESS")
+  responseJson   String?
+  errorJson      String?
+  deploymentId   String?
+  siteId         String?
+  paymentPayer   String?
+  paymentNetwork String?
+  paymentAmount  String?
+  paymentTx      String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([userId, idempotencyKey])
+  @@index([deploymentId])
+  @@index([paymentPayer, paymentNetwork])
 }
