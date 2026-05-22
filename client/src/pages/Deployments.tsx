@@ -50,6 +50,27 @@ function isGithubDeployment(d: SiteDeployment) {
   return d.source === 'github_new' || d.source === 'github_push' || d.source === 'github_rollback'
 }
 
+function deploymentTime(deployment: SiteDeployment | undefined) {
+  if (!deployment) return 0
+  return new Date(deployment.updatedAt || deployment.createdAt).getTime()
+}
+
+function sortDeployments(deployments: SiteDeployment[]) {
+  return [...deployments].sort((a, b) => {
+    const activeDelta = Number(isActive(b.status)) - Number(isActive(a.status))
+    if (activeDelta !== 0) return activeDelta
+    return deploymentTime(b) - deploymentTime(a)
+  })
+}
+
+function siteActivityTime(site: Site, deployments: SiteDeployment[]) {
+  const latestDeployment = deployments[0]
+  return Math.max(
+    new Date(site.updatedAt || site.createdAt).getTime(),
+    deploymentTime(latestDeployment)
+  )
+}
+
 function parseBuildEnvEntries(raw: string): EnvEntry[] {
   const normalized = raw
     .replace(/\\n/g, '\n')
@@ -128,7 +149,7 @@ export default function Deployments() {
     ])
 
     const deployments: Record<string, SiteDeployment[]> = {}
-    deploymentResults.forEach(r => { deployments[r.id] = r.deployments })
+    deploymentResults.forEach(r => { deployments[r.id] = sortDeployments(r.deployments) })
     setDeployMap(deployments)
 
     const connections: Record<string, GitHubConnection> = {}
@@ -276,8 +297,15 @@ export default function Deployments() {
     }
   }
 
-  const sitesWithDeploys = sites.filter(s => (deployMap[s.id]?.length ?? 0) > 0)
-  const sitesNoDeploys = sites.filter(s => (deployMap[s.id]?.length ?? 0) === 0)
+  const sortedSites = [...sites].sort((a, b) => {
+    const aDeploys = deployMap[a.id] ?? []
+    const bDeploys = deployMap[b.id] ?? []
+    const activeDelta = Number(bDeploys.some(d => isActive(d.status))) - Number(aDeploys.some(d => isActive(d.status)))
+    if (activeDelta !== 0) return activeDelta
+    return siteActivityTime(b, bDeploys) - siteActivityTime(a, aDeploys)
+  })
+  const sitesWithDeploys = sortedSites.filter(s => (deployMap[s.id]?.length ?? 0) > 0)
+  const sitesNoDeploys = sortedSites.filter(s => (deployMap[s.id]?.length ?? 0) === 0)
 
   return (
     <div className="min-h-dvh" style={{ background: 'var(--bg)' }}>
