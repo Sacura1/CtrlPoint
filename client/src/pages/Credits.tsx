@@ -7,9 +7,10 @@ import { CreditPackage } from '../types'
 const FEATURED_PACKAGE = 'pro'
 
 function packageTone(id: string) {
-  if (id === 'starter') return { label: 'Starter', accent: '#60a5fa', bg: 'rgba(96,165,250,0.1)', border: 'rgba(96,165,250,0.22)' }
-  if (id === 'builder') return { label: 'Popular', accent: '#a78bfa', bg: 'rgba(167,139,250,0.12)', border: 'rgba(167,139,250,0.28)' }
-  if (id === 'pro') return { label: 'Best value', accent: '#34d399', bg: 'rgba(52,211,153,0.1)', border: 'rgba(52,211,153,0.24)' }
+  if (id === 'launch') return { label: 'Quick start', accent: 'var(--text-soft)', bg: 'color-mix(in srgb, var(--panel-2) 84%, transparent)', border: 'var(--line)' }
+  if (id === 'starter') return { label: 'Starter', accent: 'var(--muted)', bg: 'color-mix(in srgb, var(--panel-2) 78%, transparent)', border: 'var(--line)' }
+  if (id === 'builder') return { label: 'Popular', accent: 'var(--brand-400)', bg: 'rgba(var(--brand-400-rgb),0.12)', border: 'rgba(var(--brand-400-rgb),0.28)' }
+  if (id === 'pro') return { label: 'Best value', accent: 'var(--success)', bg: 'rgba(var(--success-rgb),0.1)', border: 'rgba(var(--success-rgb),0.24)' }
   return { label: 'Scale', accent: '#fbbf24', bg: 'rgba(251,191,36,0.1)', border: 'rgba(251,191,36,0.22)' }
 }
 
@@ -31,9 +32,9 @@ export default function Credits() {
       .finally(() => setLoading(false))
   }, [])
 
-  const starterRate = useMemo(() => {
-    const starter = packages.find(pkg => pkg.id === 'starter')
-    return starter ? starter.priceUsd / starter.credits : 0
+  const baselineRate = useMemo(() => {
+    if (packages.length === 0) return 0
+    return Math.max(...packages.map(pkg => pkg.priceUsd / pkg.credits))
   }, [packages])
 
   const startCheckout = async (packageId: string) => {
@@ -49,34 +50,34 @@ export default function Credits() {
   }
 
   return (
-    <div className="min-h-dvh" style={{ background: '#05050d' }}>
+    <div className="min-h-dvh" style={{ background: 'var(--bg)' }}>
       <Header />
 
       <div className="fixed inset-0 pointer-events-none">
         <div className="absolute top-[-12%] left-[18%] w-[620px] h-[360px] opacity-08 rounded-full"
-          style={{ background: 'radial-gradient(circle, rgba(124,58,237,0.35) 0%, transparent 70%)', filter: 'blur(100px)' }} />
+          style={{ background: 'radial-gradient(circle, rgba(var(--brand-600-rgb),0.35) 0%, transparent 70%)', filter: 'blur(100px)' }} />
         <div className="absolute bottom-[-18%] right-[12%] w-[560px] h-[340px] opacity-08 rounded-full"
-          style={{ background: 'radial-gradient(circle, rgba(52,211,153,0.18) 0%, transparent 70%)', filter: 'blur(110px)' }} />
+          style={{ background: 'radial-gradient(circle, rgba(var(--success-rgb),0.18) 0%, transparent 70%)', filter: 'blur(110px)' }} />
       </div>
 
       <main className="relative z-10 mx-auto w-full max-w-[100vw] sm:max-w-5xl px-3 sm:px-6 py-7 sm:py-10 animate-fade-in overflow-x-hidden">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between mb-7">
           <div>
-            <p className="text-xs font-semibold mb-3 uppercase tracking-widest" style={{ color: 'rgba(255,255,255,0.32)' }}>
+            <p className="text-xs font-semibold mb-3 uppercase tracking-widest" style={{ color: 'var(--muted)' }}>
               Billing
             </p>
             <h1 className="text-2xl sm:text-3xl font-bold text-ink-50">Top up credits</h1>
-            <p className="text-sm mt-2 max-w-xl" style={{ color: '#8888aa' }}>
+            <p className="text-sm mt-2 max-w-xl" style={{ color: 'var(--muted)' }}>
               Credits power platform AI generations, edits, and premium short MNS names.
             </p>
           </div>
 
           <div className="rounded-2xl px-4 py-3 min-w-[180px]"
-            style={{ background: 'rgba(124,58,237,0.1)', border: '1px solid rgba(167,139,250,0.24)', boxShadow: '0 1px 0 rgba(255,255,255,0.06) inset' }}>
-            <p className="text-xs font-medium" style={{ color: 'rgba(196,181,253,0.7)' }}>Current balance</p>
+            style={{ background: 'rgba(var(--brand-600-rgb),0.1)', border: '1px solid rgba(var(--brand-400-rgb),0.24)', boxShadow: '0 1px 0 rgba(255,255,255,0.06) inset' }}>
+            <p className="text-xs font-medium" style={{ color: 'var(--muted)' }}>Current balance</p>
             <div className="flex items-end gap-2 mt-1">
               <span className="text-3xl font-bold text-brand-400 tabular-nums">{user?.credits ?? 0}</span>
-              <span className="text-xs mb-1" style={{ color: 'rgba(196,181,253,0.72)' }}>credits</span>
+              <span className="text-xs mb-1" style={{ color: 'var(--muted)' }}>credits</span>
             </div>
           </div>
         </div>
@@ -90,32 +91,32 @@ export default function Credits() {
 
         <div className="grid gap-5 items-start min-w-0">
           <section className="rounded-2xl overflow-hidden min-w-0"
-            style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.08)' }}>
+            style={{ background: 'color-mix(in srgb, var(--panel) 74%, transparent)', border: '1px solid var(--line)' }}>
             <div className="px-4 sm:px-5 py-4 flex items-center justify-between gap-4"
-              style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+              style={{ borderBottom: '1px solid var(--line)' }}>
               <div>
                 <p className="text-sm font-semibold text-ink-100">Credit packs</p>
-                <p className="text-xs mt-1" style={{ color: '#8888aa' }}>One-time purchase. No subscription.</p>
+                <p className="text-xs mt-1" style={{ color: 'var(--muted)' }}>One-time purchase. No subscription.</p>
               </div>
               <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl"
-                style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
-                <span className="w-2 h-2 rounded-full" style={{ background: '#34d399' }} />
-                <span className="text-xs font-medium" style={{ color: '#c8c8e0' }}>Secure checkout by Polar</span>
+                style={{ background: 'color-mix(in srgb, var(--panel-2) 70%, transparent)', border: '1px solid var(--line)' }}>
+                <span className="w-2 h-2 rounded-full" style={{ background: 'var(--success)' }} />
+                <span className="text-xs font-medium" style={{ color: 'var(--text-soft)' }}>Secure checkout by Polar</span>
               </div>
             </div>
 
             <div className="p-3 sm:p-5">
               {loading ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 min-w-0">
-                  {[0, 1, 2, 3].map(i => <div key={i} className="skeleton h-48 rounded-2xl" />)}
+                  {[0, 1, 2, 3, 4].map(i => <div key={i} className="skeleton h-48 rounded-2xl" />)}
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 min-w-0">
                   {packages.map(pkg => {
                     const tone = packageTone(pkg.id)
                     const rate = pkg.priceUsd / pkg.credits
-                    const savings = starterRate > 0 && rate < starterRate
-                      ? Math.round((1 - rate / starterRate) * 100)
+                    const savings = baselineRate > 0 && rate < baselineRate
+                      ? Math.round((1 - rate / baselineRate) * 100)
                       : 0
                     const featured = pkg.id === FEATURED_PACKAGE
 
@@ -123,9 +124,9 @@ export default function Credits() {
                       <button key={pkg.id} onClick={() => startCheckout(pkg.id)} disabled={checkoutId === pkg.id}
                         className="group relative block w-full max-w-full min-w-0 text-left rounded-2xl p-4 sm:p-5 transition-all duration-200 overflow-hidden disabled:cursor-wait"
                         style={{
-                          background: featured ? 'rgba(52,211,153,0.065)' : 'rgba(255,255,255,0.035)',
-                          border: `1px solid ${featured ? 'rgba(52,211,153,0.3)' : 'rgba(255,255,255,0.09)'}`,
-                          boxShadow: featured ? '0 0 0 1px rgba(52,211,153,0.08), 0 16px 50px rgba(0,0,0,0.28)' : '0 1px 0 rgba(255,255,255,0.04) inset',
+                          background: featured ? 'rgba(var(--success-rgb),0.065)' : 'color-mix(in srgb, var(--panel) 82%, transparent)',
+                          border: `1px solid ${featured ? 'rgba(var(--success-rgb),0.3)' : 'var(--line)'}`,
+                          boxShadow: featured ? '0 0 0 1px rgba(var(--success-rgb),0.08), 0 16px 50px rgba(0,0,0,0.18)' : '0 1px 0 rgba(255,255,255,0.04) inset',
                         }}>
                         <div className="absolute inset-x-0 top-0 h-px opacity-80"
                           style={{ background: `linear-gradient(90deg, transparent, ${tone.accent}, transparent)` }} />
@@ -140,7 +141,7 @@ export default function Credits() {
                           </div>
                           {savings > 0 && (
                             <span className="text-[11px] font-bold px-2 py-1 rounded-lg"
-                              style={{ color: '#34d399', background: 'rgba(52,211,153,0.08)', border: '1px solid rgba(52,211,153,0.18)' }}>
+                              style={{ color: 'var(--success)', background: 'rgba(var(--success-rgb),0.08)', border: '1px solid rgba(var(--success-rgb),0.18)' }}>
                               Save {savings}%
                             </span>
                           )}
@@ -149,13 +150,13 @@ export default function Credits() {
                         <div className="mt-5">
                           <div className="flex items-end gap-2 min-w-0">
                             <span className="text-3xl sm:text-4xl font-bold text-ink-50 tabular-nums break-all">{pkg.credits.toLocaleString()}</span>
-                            <span className="text-sm mb-1.5" style={{ color: '#8888aa' }}>credits</span>
+                            <span className="text-sm mb-1.5" style={{ color: 'var(--muted)' }}>credits</span>
                           </div>
                           <div className="flex items-center justify-between gap-3 mt-4 pt-4 min-w-0"
-                            style={{ borderTop: '1px solid rgba(255,255,255,0.07)' }}>
+                            style={{ borderTop: '1px solid var(--line)' }}>
                             <div className="min-w-0">
                               <p className="text-xl sm:text-2xl font-bold text-brand-400">{formatMoney(pkg.priceUsd)}</p>
-                              <p className="text-xs mt-1" style={{ color: '#8888aa' }}>
+                              <p className="text-xs mt-1" style={{ color: 'var(--muted)' }}>
                                 {(rate * 100).toFixed(1)} cents per credit
                               </p>
                             </div>
@@ -174,7 +175,7 @@ export default function Credits() {
 
           <aside className="min-w-0">
             <section className="rounded-2xl p-4 sm:p-5"
-              style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.08)' }}>
+              style={{ background: 'color-mix(in srgb, var(--panel) 74%, transparent)', border: '1px solid var(--line)' }}>
               <p className="text-sm font-semibold text-ink-100">What credits cover</p>
               <div className="mt-4 grid sm:grid-cols-3 gap-3">
                 {[
@@ -184,12 +185,12 @@ export default function Credits() {
                 ].map(([title, body]) => (
                   <div key={title} className="flex gap-3">
                     <div className="w-7 h-7 rounded-xl flex items-center justify-center flex-shrink-0"
-                      style={{ background: 'rgba(124,58,237,0.1)', border: '1px solid rgba(167,139,250,0.18)' }}>
-                      <span className="w-1.5 h-1.5 rounded-full" style={{ background: '#a78bfa' }} />
+                      style={{ background: 'rgba(var(--brand-600-rgb),0.1)', border: '1px solid rgba(var(--brand-400-rgb),0.18)' }}>
+                      <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--brand-400)' }} />
                     </div>
                     <div>
                       <p className="text-xs font-semibold text-ink-100">{title}</p>
-                      <p className="text-xs mt-0.5 leading-relaxed" style={{ color: '#8888aa' }}>{body}</p>
+                      <p className="text-xs mt-0.5 leading-relaxed" style={{ color: 'var(--muted)' }}>{body}</p>
                     </div>
                   </div>
                 ))}

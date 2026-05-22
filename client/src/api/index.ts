@@ -1,4 +1,4 @@
-import { User, Site, DeployStatus, CreditPackage } from '../types'
+import { User, Site, DeployStatus, CreditPackage, GitHubConnection, CustomDomain, CustomDomainCheck, ProviderHealth, AdminStatus, ArcDapp } from '../types'
 
 function normalizeApiOrigin(raw: string | undefined): string {
   if (!raw) return ''
@@ -68,6 +68,17 @@ export interface AIResponse {
   description?: string
   credits?: number
 }
+export type GenerationMode = 'site' | 'arc-web3'
+export type ArcWeb3Category =
+  | 'wallet-tools'
+  | 'payment-links'
+  | 'tip-jar'
+  | 'split-payments'
+  | 'voting-polls'
+  | 'membership'
+  | 'games'
+  | 'eligibility'
+  | 'dashboards'
 export interface ModelOption {
   id: string
   label: string
@@ -106,8 +117,8 @@ export const auth = {
 
 // AI Chat
 export const generate = {
-  chat: (history: ChatMessage[], model?: string, currentHtml?: string, reasoningEffort?: string) =>
-    request<AIResponse>('/generate', { method: 'POST', body: JSON.stringify({ history, model, currentHtml, reasoningEffort }) }),
+  chat: (history: ChatMessage[], model?: string, currentHtml?: string, reasoningEffort?: string, mode?: GenerationMode, arcCategory?: ArcWeb3Category) =>
+    request<AIResponse>('/generate', { method: 'POST', body: JSON.stringify({ history, model, currentHtml, reasoningEffort, mode, arcCategory }) }),
   update: (siteId: string, history: ChatMessage[], model?: string, reasoningEffort?: string) =>
     request<AIResponse>(`/generate/update/${siteId}`, { method: 'POST', body: JSON.stringify({ history, model, reasoningEffort }) }),
   revert: (siteId: string) =>
@@ -118,13 +129,38 @@ export const generate = {
 export const sites = {
   list: () => request<{ sites: Site[] }>('/sites'),
   get: (id: string) => request<{ site: Site }>(`/sites/${id}`),
-  create: (data: { mnsName: string; generatedCode: string; title: string; description: string; lastPrompt?: string }) =>
+  create: (data: { mnsName: string; generatedCode: string; title: string; description: string; lastPrompt?: string; arcCategory?: ArcWeb3Category }) =>
     request<{ site: Site }>('/sites', { method: 'POST', body: JSON.stringify(data) }),
   updateDraft: (id: string, data: { mnsName?: string; generatedCode?: string; title?: string; description?: string; lastPrompt?: string }) =>
     request<{ site: Site }>(`/sites/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   delete: (id: string) => request(`/sites/${id}`, { method: 'DELETE' }),
   deployments: (id: string) => request<{ deployments: import('../types').SiteDeployment[] }>(`/sites/${id}/deployments`),
+  deploymentLogs: (siteId: string, deploymentId: string) =>
+    request<{ logs: string }>(`/sites/${siteId}/deployments/${deploymentId}/logs`),
   transferOwnership: (id: string) => request<{ ok: boolean; site: Site; message: string }>(`/sites/${id}/transfer-ownership`, { method: 'POST' }),
+}
+
+export const arcDapps = {
+  list: () => request<{ dapps: ArcDapp[] }>('/arc-dapps'),
+  getForSite: (siteId: string) => request<{ dapp: ArcDapp | null }>(`/arc-dapps/site/${siteId}`),
+  markSite: (siteId: string, category: ArcWeb3Category) =>
+    request<{ dapp: ArcDapp }>(`/arc-dapps/site/${siteId}`, { method: 'POST', body: JSON.stringify({ category }) }),
+  deployContract: (dappId: string, ownerAddress: string, template?: string) =>
+    request<{ dapp: ArcDapp }>(`/arc-dapps/${dappId}/deploy-contract`, { method: 'POST', body: JSON.stringify({ ownerAddress, template }) }),
+}
+
+export const customDomains = {
+  list: () => request<{ domains: CustomDomain[] }>('/custom-domains'),
+  listForSite: (siteId: string) => request<{ domains: CustomDomain[] }>(`/custom-domains/site/${siteId}`),
+  add: (siteId: string, domain: string) =>
+    request<{ domain: CustomDomain; creditsCharged: number; userCredits?: number }>(`/custom-domains/site/${siteId}`, { method: 'POST', body: JSON.stringify({ domain }) }),
+  verify: (domainId: string) =>
+    request<{ domain: CustomDomain; verified: boolean; openable?: boolean; checks?: CustomDomainCheck[] }>(`/custom-domains/${domainId}/verify`, { method: 'POST' }),
+  remove: (domainId: string) => request<{ ok: boolean; refundedCredits?: number; userCredits?: number }>(`/custom-domains/${domainId}`, { method: 'DELETE' }),
+}
+
+export const health = {
+  provider: (fresh = false) => request<ProviderHealth>(`/health/provider${fresh ? '?fresh=true' : ''}`),
 }
 
 // Deploy
@@ -140,17 +176,19 @@ export const deploy = {
 export const github = {
   status: () => request<{ connected: boolean }>('/github/status'),
   repos: () => request<{ repos: any[] }>('/github/repos'),
-  connection: (siteId: string) => request<any>(`/github/connection/${siteId}`).catch(() => null),
-  deployNew: (data: { mnsName: string; repoOwner: string; repoName: string; branch: string; projectType: string; projectRoot?: string; buildCommand: string; outputDir: string; buildEnv?: string; githubInstallationId?: string }) =>
+  connection: (siteId: string) => request<GitHubConnection>(`/github/connection/${siteId}`).catch(() => null),
+  deployNew: (data: { mnsName: string; repoOwner: string; repoName: string; branch: string; projectType: string; projectRoot?: string; buildCommand: string; outputDir: string; buildEnv?: string; githubInstallationId?: string | null }) =>
     request<{ siteId: string; mnsName: string; creditsCharged?: number }>('/github/deploy-new', { method: 'POST', body: JSON.stringify(data) }),
-  connect: (data: { siteId: string; repoOwner: string; repoName: string; branch: string; projectType: string; projectRoot?: string; buildCommand: string; outputDir: string; buildEnv?: string; githubInstallationId?: string }) =>
-    request<{ connection: any }>('/github/connect', { method: 'POST', body: JSON.stringify(data) }),
+  connect: (data: { siteId: string; repoOwner: string; repoName: string; branch: string; projectType: string; projectRoot?: string; buildCommand: string; outputDir: string; buildEnv?: string; githubInstallationId?: string | null; autoDeployOnPush?: boolean }) =>
+    request<{ connection: GitHubConnection }>('/github/connect', { method: 'POST', body: JSON.stringify(data) }),
   disconnect: (siteId: string) =>
     request<{ ok: boolean }>(`/github/connect/${siteId}`, { method: 'DELETE' }),
   disconnectAccount: () =>
     request<{ ok: boolean }>('/github/account', { method: 'DELETE' }),
   redeploy: (siteId: string) =>
     request<{ deploymentId: string }>(`/github/redeploy/${siteId}`, { method: 'POST' }),
+  rollback: (deploymentId: string) =>
+    request<{ deploymentId: string }>(`/github/rollback/${deploymentId}`, { method: 'POST' }),
 }
 
 // File upload
@@ -188,4 +226,15 @@ export const billing = {
   packages: () => request<{ packages: CreditPackage[] }>('/billing/packages'),
   checkout: (packageId: string) => request<{ url: string }>('/billing/checkout', { method: 'POST', body: JSON.stringify({ packageId }) }),
   history: () => request<{ transactions: any[] }>('/billing/history'),
+}
+
+export const support = {
+  createTicket: (data: { email: string; title: string; body: string }) =>
+    request<{ ticket: { id: string; status: string; createdAt: string } }>('/support/tickets', { method: 'POST', body: JSON.stringify(data) }),
+}
+
+export const admin = {
+  status: () => request<AdminStatus>('/admin/status'),
+  updateTicket: (ticketId: string, status: 'OPEN' | 'CLOSED') =>
+    request<{ ticket: any }>(`/admin/tickets/${ticketId}`, { method: 'PATCH', body: JSON.stringify({ status }) }),
 }

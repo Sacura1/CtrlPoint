@@ -3,15 +3,15 @@ import { Link, useNavigate } from 'react-router-dom'
 import Header from '../components/Header'
 import { sites as sitesApi, github as githubApi } from '../api'
 import { Site } from '../types'
-import { getSiteUrl, mnsPublicDomain } from '../utils/siteUrl'
+import { getSiteDomain, getSiteUrl, mnsPublicDomain } from '../utils/siteUrl'
 import ClaimedBadge from '../components/ClaimedBadge'
 
 const STATUS = {
-  DRAFT:     { label: 'Draft',      color: 'rgba(74,74,106,0.6)',  dot: '#4a4a6a',  glow: 'none' },
+  DRAFT:     { label: 'Draft',      color: 'rgba(74,74,106,0.6)',  dot: 'var(--muted-2)',  glow: 'none' },
   DEPLOYING: { label: 'Deploying',  color: 'rgba(234,179,8,0.1)',  dot: '#eab308',  glow: '0 0 8px rgba(234,179,8,0.4)' },
-  LIVE:      { label: 'Live',       color: 'rgba(52,211,153,0.1)', dot: '#34d399',  glow: '0 0 8px rgba(52,211,153,0.5)' },
+  LIVE:      { label: 'Live',       color: 'rgba(var(--success-rgb),0.1)', dot: 'var(--success)',  glow: '0 0 8px rgba(var(--success-rgb),0.5)' },
   ERROR:     { label: 'Error',      color: 'rgba(248,113,113,0.1)',dot: '#f87171',  glow: '0 0 8px rgba(248,113,113,0.4)' },
-  UPDATING:  { label: 'Updating',   color: 'rgba(99,102,241,0.1)', dot: '#818cf8',  glow: '0 0 8px rgba(99,102,241,0.4)' },
+  UPDATING:  { label: 'Updating',   color: 'rgba(var(--brand-600-rgb),0.1)', dot: 'var(--brand-400)',  glow: '0 0 8px rgba(var(--brand-600-rgb),0.4)' },
 } as const
 
 export default function Dashboard() {
@@ -60,13 +60,13 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="min-h-dvh" style={{ background: '#05050d' }}>
+    <div className="min-h-dvh" style={{ background: 'var(--bg)' }}>
       <Header />
 
       {/* Ambient */}
       <div className="fixed inset-0 pointer-events-none">
         <div className="absolute top-0 right-[20%] w-[400px] h-[300px] opacity-10 rounded-full"
-          style={{ background: 'radial-gradient(circle, rgba(124,58,237,0.5) 0%, transparent 70%)', filter: 'blur(80px)' }} />
+          style={{ background: 'radial-gradient(circle, rgba(var(--brand-600-rgb),0.5) 0%, transparent 70%)', filter: 'blur(80px)' }} />
       </div>
 
       <main className="relative z-10 max-w-3xl mx-auto px-4 sm:px-6 py-10">
@@ -109,9 +109,14 @@ export default function Dashboard() {
 
                   {/* Info */}
                   <div className="flex-1 overflow-hidden">
-                    <span className="block font-semibold text-sm font-mono whitespace-nowrap" style={{ color: '#f0f0ff' }}>
-                      {site.mnsName}.{mnsPublicDomain}
+                    <span className="block font-semibold text-sm font-mono whitespace-nowrap" style={{ color: 'var(--text)' }}>
+                      {getSiteDomain(site.mnsName, site.customDomain)}
                     </span>
+                    {site.customDomain && (
+                      <span className="mt-0.5 block break-all font-mono text-[11px] leading-4" style={{ color: 'var(--muted-2)' }}>
+                        {site.mnsName}.{mnsPublicDomain}
+                      </span>
+                    )}
                     <div className="flex items-center gap-1.5 flex-wrap mt-1">
                       {/* Status */}
                       <span className="text-xs px-2 py-0.5 rounded-full flex-shrink-0 font-medium"
@@ -122,7 +127,7 @@ export default function Dashboard() {
                       {/* Deployment method */}
                       {ghConnections[site.id] ? (
                         <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0"
-                          style={{ background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.2)', color: '#a78bfa' }}>
+                          style={{ background: 'rgba(var(--brand-400-rgb),0.1)', border: '1px solid rgba(var(--brand-400-rgb),0.2)', color: 'var(--brand-400)' }}>
                           <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor">
                             <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
                           </svg>
@@ -130,12 +135,12 @@ export default function Dashboard() {
                         </span>
                       ) : site.lastPrompt ? (
                         <span className="text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0"
-                          style={{ background: 'rgba(52,211,153,0.08)', border: '1px solid rgba(52,211,153,0.18)', color: '#34d399' }}>
+                          style={{ background: 'rgba(var(--success-rgb),0.08)', border: '1px solid rgba(var(--success-rgb),0.18)', color: 'var(--success)' }}>
                           Agent
                         </span>
                       ) : (
                         <span className="text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0"
-                          style={{ background: 'rgba(99,179,237,0.08)', border: '1px solid rgba(99,179,237,0.18)', color: '#63b3ed' }}>
+                          style={{ background: 'color-mix(in srgb, var(--panel-2) 78%, transparent)', border: '1px solid var(--line)', color: 'var(--muted)' }}>
                           File Upload
                         </span>
                       )}
@@ -145,11 +150,19 @@ export default function Dashboard() {
                   {/* Actions — appear on hover */}
                   <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all duration-200">
                     {site.status === 'LIVE' && (
-                      <a href={getSiteUrl(site.mnsName)} target="_blank" rel="noopener noreferrer"
+                      <a href={getSiteUrl(site.mnsName, site.customDomain)} target="_blank" rel="noopener noreferrer"
                         onClick={e => e.stopPropagation()}
                         className="btn-ghost py-1 px-2.5 text-xs text-ink-400 hover:text-brand-400" title="Visit">
                         ↗
                       </a>
+                    )}
+                    {site.status === 'LIVE' && (
+                      <Link to={`/settings?site=${site.id}#custom-domains`}
+                        onClick={e => e.stopPropagation()}
+                        className="btn-ghost py-1 px-2.5 text-xs text-ink-400 hover:text-brand-400"
+                        title="Domains">
+                        Domains
+                      </Link>
                     )}
                     <button
                       onClick={e => { e.stopPropagation(); setConfirmDelete(site) }}
@@ -207,9 +220,9 @@ function EmptyState() {
   return (
     <div className="card flex flex-col items-center justify-center py-24 text-center animate-fade-in">
       <div className="w-16 h-16 rounded-3xl flex items-center justify-center mb-6"
-        style={{ background: 'rgba(124,58,237,0.1)', border: '1px solid rgba(124,58,237,0.2)' }}>
+        style={{ background: 'rgba(var(--brand-600-rgb),0.1)', border: '1px solid rgba(var(--brand-600-rgb),0.2)' }}>
         <svg width="24" height="24" viewBox="0 0 20 20" fill="none">
-          <path d="M10 4v12M4 10h12" stroke="#7c3aed" strokeWidth="1.8" strokeLinecap="round"/>
+          <path d="M10 4v12M4 10h12" stroke="var(--brand-600)" strokeWidth="1.8" strokeLinecap="round"/>
         </svg>
       </div>
       <p className="text-ink-200 font-semibold text-base mb-2">No web-apps yet</p>

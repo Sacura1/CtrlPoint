@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Header from '../components/Header'
 import UploadModal from '../components/UploadModal'
@@ -40,6 +40,7 @@ export default function Deploy() {
   const [mnsMessage, setMnsMessage] = useState('')
   const [deploying, setDeploying] = useState(false)
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const mnsCheckSeq = useRef(0)
 
   useEffect(() => {
     githubApi.status().then(({ connected }) => {
@@ -71,27 +72,54 @@ export default function Deploy() {
     if (githubConnected && repos.length === 0) loadRepos()
   }
 
-  const checkMns = async () => {
-    const name = form.mnsName.trim().toLowerCase()
-    if (!name) return
+  const checkMns = async (nameOverride?: string) => {
+    const name = (nameOverride ?? form.mnsName).trim().toLowerCase()
+    if (!name || name.length < 2) return
+    const seq = ++mnsCheckSeq.current
     setMnsStatus('checking')
     try {
       const { available, creditCost, message, error } = await deployApi.checkMns(name)
+      if (seq !== mnsCheckSeq.current) return
       setMnsStatus(available ? 'available' : 'taken')
       setMnsCreditCost(creditCost || 0)
       setMnsMessage(message || error || '')
     } catch {
+      if (seq !== mnsCheckSeq.current) return
       setMnsStatus('idle')
     }
   }
 
+  useEffect(() => {
+    const name = form.mnsName.trim().toLowerCase()
+    mnsCheckSeq.current += 1
+    setMnsCreditCost(0)
+    setMnsMessage('')
+
+    if (name.length < 2) {
+      setMnsStatus('idle')
+      return
+    }
+
+    setMnsStatus('checking')
+    const seq = mnsCheckSeq.current
+    const timer = window.setTimeout(async () => {
+      try {
+        const { available, creditCost, message, error } = await deployApi.checkMns(name)
+        if (seq !== mnsCheckSeq.current) return
+        setMnsStatus(available ? 'available' : 'taken')
+        setMnsCreditCost(creditCost || 0)
+        setMnsMessage(message || error || '')
+      } catch {
+        if (seq !== mnsCheckSeq.current) return
+        setMnsStatus('idle')
+      }
+    }, 550)
+
+    return () => window.clearTimeout(timer)
+  }, [form.mnsName])
+
   const setField = (k: keyof GitHubForm, v: string) => {
     setForm(f => ({ ...f, [k]: v }))
-    if (k === 'mnsName') {
-      setMnsStatus('idle')
-      setMnsCreditCost(0)
-      setMnsMessage('')
-    }
   }
 
   const hasEnoughMnsCredits = mnsCreditCost <= 0 || !user || user.credits >= mnsCreditCost
@@ -107,7 +135,7 @@ export default function Deploy() {
         mnsName: form.mnsName.trim().toLowerCase(),
       })
       if (creditsCharged && user) setUser({ ...user, credits: Math.max(0, user.credits - creditsCharged) })
-      navigate('/dashboard')
+      navigate('/deployments')
     } catch (err: any) {
       setMsg({ ok: false, text: err.message })
     } finally {
@@ -116,19 +144,19 @@ export default function Deploy() {
   }
 
   return (
-    <div className="min-h-dvh" style={{ background: '#05050d' }}>
+    <div className="min-h-dvh" style={{ background: 'var(--bg)' }}>
       <Header />
 
       <div className="fixed inset-0 pointer-events-none">
         <div className="absolute top-[-10%] left-1/2 -translate-x-1/2 w-[700px] h-[350px] rounded-full"
-          style={{ background: 'radial-gradient(circle, rgba(124,58,237,0.18) 0%, transparent 70%)', filter: 'blur(80px)' }} />
+          style={{ background: 'radial-gradient(circle, rgba(var(--brand-600-rgb),0.18) 0%, transparent 70%)', filter: 'blur(80px)' }} />
       </div>
 
       <main className="relative z-10 max-w-2xl mx-auto px-4 sm:px-6 py-10 animate-fade-in">
 
         <div className="mb-8">
-          <h1 className="text-2xl font-bold" style={{ color: '#f0f0ff' }}>Deploy Web-App</h1>
-          <p className="mt-1 text-sm" style={{ color: '#8888aa' }}>
+          <h1 className="text-2xl font-bold" style={{ color: 'var(--text)' }}>Deploy Web-App</h1>
+          <p className="mt-1 text-sm" style={{ color: 'var(--muted)' }}>
             Upload files or deploy from a GitHub repo — both register a new MNS address on Massa DeWeb.
           </p>
         </div>
@@ -141,23 +169,23 @@ export default function Deploy() {
             <button
               onClick={() => setShowUpload(true)}
               className="flex flex-col items-start p-6 rounded-2xl text-left transition-all duration-200"
-              style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)' }}
-              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.07)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.16)' }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)' }}
+              style={{ background: 'color-mix(in srgb, var(--panel-2) 70%, transparent)', border: '1px solid var(--line)' }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'color-mix(in srgb, var(--panel-2) 86%, transparent)'; e.currentTarget.style.borderColor = 'var(--line-strong)' }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'color-mix(in srgb, var(--panel-2) 70%, transparent)'; e.currentTarget.style.borderColor = 'var(--line)' }}
             >
               <div className="w-11 h-11 rounded-xl flex items-center justify-center mb-4"
-                style={{ background: 'rgba(167,139,250,0.12)', border: '1px solid rgba(167,139,250,0.25)' }}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                style={{ background: 'rgba(var(--brand-400-rgb),0.12)', border: '1px solid rgba(var(--brand-400-rgb),0.25)' }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--brand-400)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                   <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
                   <polyline points="17 8 12 3 7 8"/>
                   <line x1="12" y1="3" x2="12" y2="15"/>
                 </svg>
               </div>
-              <p className="text-base font-bold mb-1.5" style={{ color: '#f0f0ff' }}>Upload Files</p>
-              <p className="text-sm leading-relaxed" style={{ color: '#8888aa' }}>
+              <p className="text-base font-bold mb-1.5" style={{ color: 'var(--text)' }}>Upload Files</p>
+              <p className="text-sm leading-relaxed" style={{ color: 'var(--muted)' }}>
                 Drop an HTML file or zip. Opens in the AI editor so you can tweak before deploying.
               </p>
-              <div className="mt-4 flex items-center gap-1.5 text-xs font-semibold" style={{ color: '#a78bfa' }}>
+              <div className="mt-4 flex items-center gap-1.5 text-xs font-semibold" style={{ color: 'var(--brand-400)' }}>
                 Upload &amp; Edit →
               </div>
             </button>
@@ -166,21 +194,21 @@ export default function Deploy() {
             <button
               onClick={openGitHub}
               className="flex flex-col items-start p-6 rounded-2xl text-left transition-all duration-200"
-              style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)' }}
-              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.07)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.16)' }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)' }}
+              style={{ background: 'color-mix(in srgb, var(--panel-2) 70%, transparent)', border: '1px solid var(--line)' }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'color-mix(in srgb, var(--panel-2) 86%, transparent)'; e.currentTarget.style.borderColor = 'var(--line-strong)' }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'color-mix(in srgb, var(--panel-2) 70%, transparent)'; e.currentTarget.style.borderColor = 'var(--line)' }}
             >
               <div className="w-11 h-11 rounded-xl flex items-center justify-center mb-4"
-                style={{ background: 'rgba(167,139,250,0.12)', border: '1px solid rgba(167,139,250,0.25)' }}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="#a78bfa">
+                style={{ background: 'rgba(var(--brand-400-rgb),0.12)', border: '1px solid rgba(var(--brand-400-rgb),0.25)' }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="var(--brand-400)">
                   <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
                 </svg>
               </div>
-              <p className="text-base font-bold mb-1.5" style={{ color: '#f0f0ff' }}>Deploy a GitHub Repo</p>
-              <p className="text-sm leading-relaxed" style={{ color: '#8888aa' }}>
+              <p className="text-base font-bold mb-1.5" style={{ color: 'var(--text)' }}>Deploy a GitHub Repo</p>
+              <p className="text-sm leading-relaxed" style={{ color: 'var(--muted)' }}>
                 Connect a repo — registers a new MNS and every push to your branch auto-redeploys it.
               </p>
-              <div className="mt-4 flex items-center gap-1.5 text-xs font-semibold" style={{ color: '#a78bfa' }}>
+              <div className="mt-4 flex items-center gap-1.5 text-xs font-semibold" style={{ color: 'var(--brand-400)' }}>
                 Deploy a GitHub Repo →
               </div>
             </button>
@@ -192,9 +220,9 @@ export default function Deploy() {
           <div className="animate-fade-in">
             <button onClick={() => { setTab(null); setMsg(null) }}
               className="flex items-center gap-1.5 text-sm mb-6 transition-colors"
-              style={{ color: '#8888aa' }}
-              onMouseEnter={e => (e.currentTarget.style.color = '#c8c8e0')}
-              onMouseLeave={e => (e.currentTarget.style.color = '#8888aa')}>
+              style={{ color: 'var(--muted)' }}
+              onMouseEnter={e => (e.currentTarget.style.color = 'var(--text-soft)')}
+              onMouseLeave={e => (e.currentTarget.style.color = 'var(--muted)')}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
                 <path d="M19 12H5M12 5l-7 7 7 7"/>
               </svg>
@@ -204,48 +232,48 @@ export default function Deploy() {
             {/* GitHub account check */}
             {!githubConnected ? (
               <div className="p-6 rounded-2xl text-center"
-                style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.09)' }}>
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="#8888aa" className="mx-auto mb-3">
+                style={{ background: 'color-mix(in srgb, var(--panel) 78%, transparent)', border: '1px solid var(--line)' }}>
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="var(--muted)" className="mx-auto mb-3">
                   <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
                 </svg>
-                <p className="text-sm font-semibold mb-1" style={{ color: '#f0f0ff' }}>GitHub not connected</p>
-                <p className="text-xs mb-4" style={{ color: '#8888aa' }}>Install the CtrlPoint GitHub App and choose which repositories it can access.</p>
+                <p className="text-sm font-semibold mb-1" style={{ color: 'var(--text)' }}>GitHub not connected</p>
+                <p className="text-xs mb-4" style={{ color: 'var(--muted)' }}>Install the CtrlPoint GitHub App and choose which repositories it can access.</p>
                 <a href={apiUrl('/github/install')}
                   className="inline-flex items-center gap-2 text-sm font-semibold px-4 py-2 rounded-xl transition-all"
-                  style={{ background: 'rgba(124,58,237,0.2)', border: '1px solid rgba(167,139,250,0.35)', color: '#c4b5fd' }}
-                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(124,58,237,0.32)')}
-                  onMouseLeave={e => (e.currentTarget.style.background = 'rgba(124,58,237,0.2)')}>
+                  style={{ background: 'rgba(var(--brand-600-rgb),0.2)', border: '1px solid rgba(var(--brand-400-rgb),0.35)', color: 'var(--brand-300)' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(var(--brand-600-rgb),0.32)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'rgba(var(--brand-600-rgb),0.2)')}>
                   Install GitHub App
                 </a>
               </div>
             ) : (
               <div className="rounded-2xl"
-                style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.09)' }}>
+                style={{ background: 'color-mix(in srgb, var(--panel) 78%, transparent)', border: '1px solid var(--line)' }}>
                 <div className="px-5 py-5 space-y-4">
 
                   {/* MNS name */}
                   <div>
-                    <label className="text-xs font-bold block mb-1.5 uppercase tracking-wide" style={{ color: '#c8c8e0' }}>
-                      MNS Name <span style={{ color: '#8888aa', fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>— your site address</span>
+                    <label className="text-xs font-bold block mb-1.5 uppercase tracking-wide" style={{ color: 'var(--text-soft)' }}>
+                      MNS Name <span style={{ color: 'var(--muted)', fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>— your site address</span>
                     </label>
                     <div className="flex gap-2">
                       <div className="flex-1 flex items-center rounded-xl overflow-hidden"
-                        style={{ background: 'rgba(255,255,255,0.05)', border: `1px solid ${mnsStatus === 'available' ? 'rgba(52,211,153,0.4)' : mnsStatus === 'taken' ? 'rgba(248,113,113,0.4)' : 'rgba(255,255,255,0.1)'}` }}>
+                        style={{ background: 'color-mix(in srgb, var(--panel-2) 74%, transparent)', border: `1px solid ${mnsStatus === 'available' ? 'rgba(var(--success-rgb),0.4)' : mnsStatus === 'taken' ? 'rgba(248,113,113,0.4)' : 'var(--line)'}` }}>
                         <input
                           className="flex-1 bg-transparent px-3 py-2.5 text-sm font-mono outline-none"
-                          style={{ color: '#f0f0ff' }}
+                          style={{ color: 'var(--text)' }}
                           placeholder="my-app"
                           value={form.mnsName}
                           onChange={e => setField('mnsName', e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
                           onKeyDown={e => { if (e.key === 'Enter') checkMns() }}
                         />
-                        <span className="pr-3 text-xs font-mono flex-shrink-0" style={{ color: '#4a4a6a' }}>.{mnsPublicDomain}</span>
+                        <span className="pr-3 text-xs font-mono flex-shrink-0" style={{ color: 'var(--muted-2)' }}>.{mnsPublicDomain}</span>
                       </div>
-                      <button onClick={checkMns} disabled={!form.mnsName || mnsStatus === 'checking'}
+                      <button onClick={() => checkMns()} disabled={!form.mnsName || mnsStatus === 'checking'}
                         className="px-4 py-2.5 rounded-xl text-xs font-semibold transition-all flex-shrink-0"
-                        style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', color: '#c8c8e0' }}
-                        onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.12)')}
-                        onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.07)')}>
+                        style={{ background: 'color-mix(in srgb, var(--panel-2) 82%, transparent)', border: '1px solid var(--line-strong)', color: 'var(--text-soft)' }}
+                        onMouseEnter={e => (e.currentTarget.style.background = 'color-mix(in srgb, var(--panel-2) 96%, transparent)')}
+                        onMouseLeave={e => (e.currentTarget.style.background = 'color-mix(in srgb, var(--panel-2) 82%, transparent)')}>
                         {mnsStatus === 'checking' ? 'Checking…' : 'Check'}
                       </button>
                     </div>
@@ -265,13 +293,13 @@ export default function Deploy() {
 
                   {/* Repo picker */}
                   <div>
-                    <label className="text-xs font-bold block mb-1.5 uppercase tracking-wide" style={{ color: '#c8c8e0' }}>Repository</label>
+                    <label className="text-xs font-bold block mb-1.5 uppercase tracking-wide" style={{ color: 'var(--text-soft)' }}>Repository</label>
                     {loadingRepos ? (
-                      <p className="text-xs" style={{ color: '#8888aa' }}>Loading your repos…</p>
+                      <p className="text-xs" style={{ color: 'var(--muted)' }}>Loading your repos…</p>
                     ) : (
                       <select
                         className="input text-sm w-full"
-                        style={{ background: '#0c0c1e', color: '#f0f0ff' }}
+                        style={{ background: 'var(--input-bg)', color: 'var(--text)' }}
                         value={`${form.repoOwner}/${form.repoName}`}
                         onChange={e => {
                           const [owner, ...rest] = e.target.value.split('/')
@@ -279,9 +307,9 @@ export default function Deploy() {
                           const repo = repos.find(r => r.owner === owner && r.name === name)
                           setForm(f => ({ ...f, repoOwner: owner, repoName: name, githubInstallationId: repo?.installationId, branch: repo?.defaultBranch || 'main' }))
                         }}>
-                        <option value="/" style={{ background: '#0c0c1e', color: '#8888aa' }}>— select a repo —</option>
+                        <option value="/" style={{ background: 'var(--input-bg)', color: 'var(--muted)' }}>— select a repo —</option>
                         {repos.map(r => (
-                          <option key={r.id} value={`${r.owner}/${r.name}`} style={{ background: '#0c0c1e', color: '#f0f0ff' }}>
+                          <option key={r.id} value={`${r.owner}/${r.name}`} style={{ background: 'var(--input-bg)', color: 'var(--text)' }}>
                             {r.fullName}
                           </option>
                         ))}
@@ -298,11 +326,11 @@ export default function Deploy() {
                     </div>
                     <div>
                       <FieldLabel label="Project Type" tip="Static HTML: your repo has a ready-to-serve index.html at the root — no build step. Framework: uses React, Vue, Svelte etc. and must be compiled. We run your build command and serve the output folder." />
-                      <select className="input text-sm w-full" style={{ background: '#0c0c1e', color: '#f0f0ff' }}
+                      <select className="input text-sm w-full" style={{ background: 'var(--input-bg)', color: 'var(--text)' }}
                         value={form.projectType}
                         onChange={e => setField('projectType', e.target.value)}>
-                        <option value="static" style={{ background: '#0c0c1e' }}>Static HTML</option>
-                        <option value="framework" style={{ background: '#0c0c1e' }}>Framework (React, Vue…)</option>
+                        <option value="static" style={{ background: 'var(--input-bg)' }}>Static HTML</option>
+                        <option value="framework" style={{ background: 'var(--input-bg)' }}>Framework (React, Vue…)</option>
                       </select>
                     </div>
                   </div>
@@ -350,8 +378,8 @@ export default function Deploy() {
                   </button>
 
                   {!canDeploy && !deploying && (
-                    <p className="text-xs text-center" style={{ color: '#4a4a6a' }}>
-                      Enter an MNS name, check availability, and select a repo to continue.
+                    <p className="text-xs text-center" style={{ color: 'var(--muted-2)' }}>
+                      Enter an MNS name and select a repo to continue.
                     </p>
                   )}
                 </div>
@@ -371,20 +399,20 @@ function FieldLabel({ label, tip }: { label: string; tip: string }) {
   return (
     <div className="mb-1.5">
       <div className="flex items-center gap-1.5">
-        <label className="text-xs font-bold uppercase tracking-wide" style={{ color: '#c8c8e0' }}>{label}</label>
+        <label className="text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--text-soft)' }}>{label}</label>
         <button type="button" onClick={() => setOpen(v => !v)}
           className="w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0"
           style={{
-            background: open ? 'rgba(167,139,250,0.15)' : 'rgba(255,255,255,0.08)',
-            border: `1px solid ${open ? 'rgba(167,139,250,0.3)' : 'rgba(255,255,255,0.15)'}`,
-            color: open ? '#a78bfa' : '#8888aa',
+            background: open ? 'rgba(var(--brand-400-rgb),0.15)' : 'color-mix(in srgb, var(--panel-2) 86%, transparent)',
+            border: `1px solid ${open ? 'rgba(var(--brand-400-rgb),0.3)' : 'var(--line-strong)'}`,
+            color: open ? 'var(--brand-400)' : 'var(--muted)',
             fontSize: '9px', fontWeight: 700,
           }}>
           i
         </button>
       </div>
       {open && (
-        <p className="text-xs mt-1 leading-relaxed animate-fade-in" style={{ color: '#8888aa' }}>
+        <p className="text-xs mt-1 leading-relaxed animate-fade-in" style={{ color: 'var(--muted)' }}>
           {tip}
         </p>
       )}

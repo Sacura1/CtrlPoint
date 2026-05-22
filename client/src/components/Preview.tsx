@@ -21,19 +21,19 @@ export default function Preview({ html, generating = false, className = '' }: Pr
 
   return (
     <div className={`flex flex-col rounded-2xl overflow-hidden ${className}`}
-      style={{ border: '1px solid rgba(255,255,255,0.07)', background: '#05050d' }}>
+      style={{ border: '1px solid var(--line)', background: 'var(--bg)' }}>
 
       {/* Browser chrome */}
       <div className="flex items-center gap-2 px-4 py-2.5 flex-shrink-0"
-        style={{ background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+        style={{ background: 'color-mix(in srgb, var(--panel) 78%, transparent)', borderBottom: '1px solid var(--line)' }}>
         <div className="flex gap-1.5">
-          <div className="w-2.5 h-2.5 rounded-full" style={{ background: 'rgba(255,255,255,0.1)' }} />
-          <div className="w-2.5 h-2.5 rounded-full" style={{ background: 'rgba(255,255,255,0.1)' }} />
-          <div className="w-2.5 h-2.5 rounded-full" style={{ background: 'rgba(255,255,255,0.1)' }} />
+          <div className="w-2.5 h-2.5 rounded-full" style={{ background: 'color-mix(in srgb, var(--panel-2) 92%, transparent)' }} />
+          <div className="w-2.5 h-2.5 rounded-full" style={{ background: 'color-mix(in srgb, var(--panel-2) 92%, transparent)' }} />
+          <div className="w-2.5 h-2.5 rounded-full" style={{ background: 'color-mix(in srgb, var(--panel-2) 92%, transparent)' }} />
         </div>
         <div className="flex-1 rounded-lg px-3 py-1 mx-1"
-          style={{ background: 'rgba(255,255,255,0.04)' }}>
-          <span className="text-xs font-mono" style={{ color: 'rgba(255,255,255,0.2)' }}>
+          style={{ background: 'color-mix(in srgb, var(--panel-2) 70%, transparent)' }}>
+          <span className="text-xs font-mono" style={{ color: 'var(--muted-2)' }}>
             {html && !generating ? 'preview' : generating ? 'building…' : 'preview'}
           </span>
         </div>
@@ -47,14 +47,14 @@ export default function Preview({ html, generating = false, className = '' }: Pr
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="text-center select-none px-6">
               <div className="w-14 h-14 mx-auto mb-5 rounded-3xl flex items-center justify-center"
-                style={{ background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.15)' }}>
-                <svg className="w-6 h-6" style={{ color: 'rgba(124,58,237,0.5)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                style={{ background: 'rgba(var(--brand-600-rgb),0.08)', border: '1px solid rgba(var(--brand-600-rgb),0.15)' }}>
+                <svg className="w-6 h-6" style={{ color: 'rgba(var(--brand-600-rgb),0.5)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <rect x="2" y="3" width="20" height="14" rx="2" strokeWidth="1.2"/>
                   <path strokeLinecap="round" strokeWidth="1.2" d="M8 21h8M12 17v4"/>
                 </svg>
               </div>
-              <p className="text-sm font-medium" style={{ color: 'rgba(255,255,255,0.2)' }}>Preview will appear here</p>
-              <p className="text-xs mt-1" style={{ color: 'rgba(255,255,255,0.1)' }}>Describe your site to get started</p>
+              <p className="text-sm font-medium" style={{ color: 'var(--muted-2)' }}>Preview will appear here</p>
+              <p className="text-xs mt-1" style={{ color: 'var(--muted-2)' }}>Describe your site to get started</p>
             </div>
           </div>
         )}
@@ -65,18 +65,18 @@ export default function Preview({ html, generating = false, className = '' }: Pr
             {/* Animated orbs */}
             <div className="absolute inset-0 pointer-events-none">
               <div className="absolute top-1/4 left-1/4 w-48 h-48 rounded-full opacity-30 animate-float"
-                style={{ background: 'radial-gradient(circle, rgba(124,58,237,0.6) 0%, transparent 70%)', filter: 'blur(40px)' }} />
+                style={{ background: 'radial-gradient(circle, rgba(var(--brand-600-rgb),0.6) 0%, transparent 70%)', filter: 'blur(40px)' }} />
               <div className="absolute bottom-1/4 right-1/4 w-40 h-40 rounded-full opacity-20 animate-float-slow"
-                style={{ background: 'radial-gradient(circle, rgba(139,92,246,0.5) 0%, transparent 70%)', filter: 'blur(50px)', animationDelay: '2s' }} />
+                style={{ background: 'radial-gradient(circle, rgba(var(--brand-500-rgb),0.5) 0%, transparent 70%)', filter: 'blur(50px)', animationDelay: '2s' }} />
               <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-32 h-32 rounded-full opacity-15 animate-orb-pulse"
-                style={{ background: 'radial-gradient(circle, rgba(167,139,250,0.4) 0%, transparent 70%)', filter: 'blur(30px)' }} />
+                style={{ background: 'radial-gradient(circle, rgba(var(--brand-400-rgb),0.4) 0%, transparent 70%)', filter: 'blur(30px)' }} />
             </div>
 
             {/* Scan line */}
             <div className="absolute inset-x-0 h-[2px] opacity-40 animate-build-scan"
               style={{
                 top: '45%',
-                background: 'linear-gradient(90deg, transparent, rgba(124,58,237,0.8), rgba(167,139,250,1), rgba(124,58,237,0.8), transparent)',
+                background: 'linear-gradient(90deg, transparent, rgba(var(--brand-600-rgb),0.8), rgba(var(--brand-400-rgb),1), rgba(var(--brand-600-rgb),0.8), transparent)',
                 backgroundSize: '60% 100%',
                 filter: 'blur(1px)',
               }} />
@@ -86,28 +86,28 @@ export default function Preview({ html, generating = false, className = '' }: Pr
               {/* Spinning ring */}
               <div className="relative w-16 h-16 mx-auto mb-5">
                 <svg className="w-16 h-16 animate-spin-slow" viewBox="0 0 64 64" fill="none">
-                  <circle cx="32" cy="32" r="28" stroke="rgba(124,58,237,0.15)" strokeWidth="2"/>
+                  <circle cx="32" cy="32" r="28" stroke="rgba(var(--brand-600-rgb),0.15)" strokeWidth="2"/>
                   <path d="M60 32a28 28 0 00-28-28" stroke="url(#grad)" strokeWidth="2" strokeLinecap="round"/>
                   <defs>
                     <linearGradient id="grad" x1="32" y1="4" x2="60" y2="32" gradientUnits="userSpaceOnUse">
-                      <stop stopColor="#7c3aed"/>
-                      <stop offset="1" stopColor="#a78bfa"/>
+                      <stop stopColor="var(--brand-600)"/>
+                      <stop offset="1" stopColor="var(--brand-400)"/>
                     </linearGradient>
                   </defs>
                 </svg>
                 <div className="absolute inset-0 flex items-center justify-center">
                   <div className="w-5 h-5 rounded-full animate-pulse"
-                    style={{ background: 'radial-gradient(circle, rgba(124,58,237,0.8) 0%, transparent 100%)' }} />
+                    style={{ background: 'radial-gradient(circle, rgba(var(--brand-600-rgb),0.8) 0%, transparent 100%)' }} />
                 </div>
               </div>
 
-              <p className="text-sm font-semibold mb-2 shimmer-text">AI is building your site…</p>
+              <p className="text-sm font-semibold mb-2 shimmer-text">Agent is working…</p>
 
               {/* Dots */}
               <div className="flex items-center justify-center gap-1.5">
                 {[0, 0.25, 0.5].map((d, i) => (
                   <div key={i} className="w-1.5 h-1.5 rounded-full animate-pulse-dot"
-                    style={{ background: 'rgba(124,58,237,0.7)', animationDelay: `${d}s` }} />
+                    style={{ background: 'rgba(var(--brand-600-rgb),0.7)', animationDelay: `${d}s` }} />
                 ))}
               </div>
             </div>

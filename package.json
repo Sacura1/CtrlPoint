@@ -1,4 +1,11 @@
 {
+  "scripts": {
+    "smoke": "node scripts/platform-smoke-test.cjs",
+    "custom-domain-router": "node scripts/custom-domain-router.cjs",
+    "test:credits": "node server/scripts/test-dynamic-credit-pricing.cjs",
+    "test:arc-web3": "node scripts/arc-web3-static-check.cjs",
+    "grant:credits": "node server/scripts/grant-credits.cjs"
+  },
   "dependencies": {
     "@massalabs/deweb-cli": "^0.6.1",
     "@massalabs/massa-web3": "^5.3.0",

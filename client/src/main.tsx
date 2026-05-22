@@ -7,6 +7,13 @@ import './index.css'
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || ''
 
+try {
+  const theme = window.localStorage.getItem('ctrlpoint-theme') === 'light' ? 'light' : 'dark'
+  document.documentElement.dataset.theme = theme
+} catch {
+  document.documentElement.dataset.theme = 'dark'
+}
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
