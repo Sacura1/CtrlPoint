@@ -19,8 +19,8 @@ const METHODS = [
 
 export default function Landing() {
   const { user, loading } = useAuth()
-  const authTarget = user ? '/editor' : '/auth'
-  const registerTarget = user ? '/editor' : '/auth?mode=register'
+  const authTarget = user ? '/deploy' : '/auth'
+  const registerTarget = user ? '/deploy' : '/auth?mode=register'
 
   return (
     <div className="min-h-dvh overflow-x-hidden bg-[var(--bg)] text-[var(--text)]">
@@ -42,7 +42,7 @@ export default function Landing() {
                 className="hidden rounded-xl px-3 py-2 text-sm font-semibold text-[var(--muted)] transition hover:text-[var(--text)] md:inline-flex">
                 Capabilities
               </a>
-              <Link to="/editor" className="btn-primary px-4 py-2 text-sm sm:px-5">Open</Link>
+              <Link to="/deploy" className="btn-primary px-4 py-2 text-sm sm:px-5">Open</Link>
             </nav>
           ) : (
             <nav className="flex items-center gap-2">
@@ -69,7 +69,7 @@ export default function Landing() {
           <div className="relative mx-auto grid min-h-[calc(100dvh-64px)] max-w-6xl content-center gap-10 px-4 py-12 sm:px-6 lg:grid-cols-[1fr_0.82fr] lg:items-center">
             <div className="text-center lg:text-left">
               <div className="mb-5 inline-flex rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs font-bold uppercase tracking-[0.12em] text-[var(--brand-300)]">
-                AI web apps on Massa DeWeb
+                Web apps on Massa DeWeb
               </div>
               <h1 className="mx-auto max-w-4xl text-[clamp(2.35rem,11vw,4.5rem)] font-black leading-[1.02] tracking-normal sm:text-6xl lg:mx-0 lg:text-7xl">
                 <span className="block">Build and deploy</span>
@@ -80,7 +80,7 @@ export default function Landing() {
                 </span>
               </h1>
               <p className="mx-auto mt-5 max-w-xl text-base leading-7 text-[var(--muted)] sm:text-lg lg:mx-0">
-                CtrlPoint turns prompts, uploads, GitHub repos, and agent requests into live Massa DeWeb sites with update paths built in.
+                CtrlPoint turns GitHub repos, prompts, uploads, and agent requests into live Massa DeWeb sites with update paths built in.
               </p>
               <div className="mx-auto mt-4 flex max-w-xl flex-wrap justify-center gap-2 lg:mx-0 lg:justify-start">
                 <span className="rounded-full border border-[rgba(var(--success-rgb),0.22)] bg-[rgba(var(--success-rgb),0.08)] px-3 py-1 text-xs font-bold text-[var(--success)]">

@@ -34,6 +34,15 @@ type EnvEntry = {
   value: string
 }
 
+type ConfirmAction = {
+  title: string
+  body: string
+  confirmLabel: string
+  destructive?: boolean
+  disabled?: boolean
+  onConfirm: () => void
+}
+
 function timeAgo(date: string) {
   const s = Math.floor((Date.now() - new Date(date).getTime()) / 1000)
   if (s < 60) return `${s}s ago`
@@ -120,7 +129,9 @@ export default function Deployments() {
   const [savingSettings, setSavingSettings] = useState(false)
   const [redeploying, setRedeploying] = useState(false)
   const [disconnecting, setDisconnecting] = useState(false)
+  const [deletingSite, setDeletingSite] = useState(false)
   const [rollingBackId, setRollingBackId] = useState<string | null>(null)
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null)
   const [rollbackTarget, setRollbackTarget] = useState<SiteDeployment | null>(null)
   const [logsTarget, setLogsTarget] = useState<{ site: Site; deployment: SiteDeployment } | null>(null)
   const [logsText, setLogsText] = useState('')
@@ -235,9 +246,8 @@ export default function Deployments() {
 
   const disconnectRepo = async () => {
     if (!settingsForm) return
-    const confirmed = window.confirm('Disconnect this repository from the web-app? GitHub pushes will stop deploying it.')
-    if (!confirmed) return
     setDisconnecting(true)
+    setConfirmAction(null)
     setMessage(null)
     try {
       await githubApi.disconnect(settingsForm.siteId)
@@ -249,6 +259,26 @@ export default function Deployments() {
       setMessage({ ok: false, text: err.message })
     } finally {
       setDisconnecting(false)
+    }
+  }
+
+  const deleteDeploymentSite = async () => {
+    if (!settingsForm) return
+    setDeletingSite(true)
+    setConfirmAction(null)
+    setMessage(null)
+    try {
+      await sitesApi.delete(settingsForm.siteId)
+      setSites(prev => prev.filter(site => site.id !== settingsForm.siteId))
+      setDeployMap(prev => { const next = { ...prev }; delete next[settingsForm.siteId]; return next })
+      setConnectionMap(prev => { const next = { ...prev }; delete next[settingsForm.siteId]; return next })
+      setSettingsForm(null)
+      setMessage({ ok: true, text: 'Deployment deleted from CtrlPoint.' })
+      await loadAll()
+    } catch (err: any) {
+      setMessage({ ok: false, text: err.message })
+    } finally {
+      setDeletingSite(false)
     }
   }
 
@@ -653,10 +683,33 @@ export default function Deployments() {
                   style={{ color: 'var(--success)', border: '1px solid rgba(var(--success-rgb),0.28)', background: 'rgba(var(--success-rgb),0.09)' }}>
                   {redeploying ? 'Queueing...' : 'Redeploy latest commit'}
                 </button>
-                <button onClick={disconnectRepo} disabled={disconnecting}
-                  className="sm:col-span-2 text-xs py-2.5 rounded-xl font-medium"
+                <button
+                  onClick={() => setConfirmAction({
+                    title: 'Disconnect repository',
+                    body: 'Disconnect this repository from the web-app? GitHub pushes will stop deploying it, but the deployed site and deployment history will stay in CtrlPoint.',
+                    confirmLabel: disconnecting ? 'Disconnecting...' : 'Disconnect',
+                    destructive: true,
+                    disabled: disconnecting,
+                    onConfirm: disconnectRepo,
+                  })}
+                  disabled={disconnecting}
+                  className="text-xs py-2.5 rounded-xl font-medium"
                   style={{ color: 'rgba(248,113,113,0.75)', border: '1px solid rgba(248,113,113,0.18)', background: 'rgba(248,113,113,0.06)' }}>
                   {disconnecting ? 'Disconnecting...' : 'Disconnect repo'}
+                </button>
+                <button
+                  onClick={() => setConfirmAction({
+                    title: 'Delete deployment',
+                    body: 'Delete this deployment from CtrlPoint? This removes it from your dashboard and disconnects its GitHub settings. The onchain site may remain accessible, but CtrlPoint will no longer manage it.',
+                    confirmLabel: deletingSite ? 'Deleting...' : 'Delete',
+                    destructive: true,
+                    disabled: deletingSite,
+                    onConfirm: deleteDeploymentSite,
+                  })}
+                  disabled={deletingSite}
+                  className="text-xs py-2.5 rounded-xl font-semibold"
+                  style={{ color: 'var(--danger)', border: '1px solid rgba(var(--danger-rgb),0.34)', background: 'rgba(var(--danger-rgb),0.09)' }}>
+                  {deletingSite ? 'Deleting...' : 'Delete deployment'}
                 </button>
               </div>
               </div>
@@ -684,6 +737,18 @@ export default function Deployments() {
           disabled={rollingBackId === rollbackTarget.id}
           onCancel={() => setRollbackTarget(null)}
           onConfirm={() => rollbackDeployment(rollbackTarget)}
+        />
+      )}
+
+      {confirmAction && (
+        <ConfirmModal
+          title={confirmAction.title}
+          body={confirmAction.body}
+          confirmLabel={confirmAction.confirmLabel}
+          destructive={confirmAction.destructive}
+          disabled={confirmAction.disabled}
+          onCancel={() => setConfirmAction(null)}
+          onConfirm={confirmAction.onConfirm}
         />
       )}
     </div>
@@ -948,10 +1013,20 @@ function ConfirmModal({
           <div className="flex items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl"
               style={{ background: destructive ? 'rgba(248,113,113,0.1)' : 'rgba(var(--accent-rgb, var(--brand-600-rgb)),0.12)', border: `1px solid ${destructive ? 'rgba(248,113,113,0.22)' : 'rgba(var(--accent-rgb, var(--brand-600-rgb)),0.24)'}` }}>
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={destructive ? '#f87171' : 'var(--accent, var(--brand-400))'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M3 7v6h6" />
-                <path d="M21 17a9 9 0 0 0-15-6.7L3 13" />
-              </svg>
+              {destructive ? (
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#f87171" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 6h18" />
+                  <path d="M8 6V4h8v2" />
+                  <path d="M19 6l-1 14H6L5 6" />
+                  <path d="M10 11v5" />
+                  <path d="M14 11v5" />
+                </svg>
+              ) : (
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--accent, var(--brand-400))" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 7v6h6" />
+                  <path d="M21 17a9 9 0 0 0-15-6.7L3 13" />
+                </svg>
+              )}
             </div>
             <p className="text-base font-bold" style={{ color: 'var(--text)' }}>{title}</p>
           </div>
@@ -966,7 +1041,7 @@ function ConfirmModal({
             </button>
             <button type="button" onClick={onConfirm} disabled={disabled}
               className={destructive ? 'rounded-xl px-4 py-2.5 text-sm font-semibold' : 'btn-primary px-4 py-2.5 text-sm'}
-              style={destructive ? { color: '#fffdfa', background: '#b4232f', border: '1px solid rgba(180,35,47,0.3)' } : undefined}>
+              style={destructive ? { color: '#fffdfa', background: 'var(--danger)', border: '1px solid rgba(var(--danger-rgb),0.38)' } : undefined}>
               {confirmLabel}
             </button>
           </div>

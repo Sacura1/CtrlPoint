@@ -32,6 +32,8 @@
     --brand-700-rgb: 15,117,75;
     --success: #34d399;
     --success-rgb: 52,211,153;
+    --danger: #f87171;
+    --danger-rgb: 248,113,113;
     --accent: var(--brand-400);
     --accent-strong: var(--brand-600);
     --accent-rgb: var(--brand-400-rgb);
@@ -83,6 +85,8 @@
     --brand-700-rgb: 36,34,31;
     --success: #0ca66a;
     --success-rgb: 12,166,106;
+    --danger: #b4232f;
+    --danger-rgb: 180,35,47;
     --accent: #6f5538;
     --accent-strong: #523d28;
     --accent-rgb: 111,85,56;

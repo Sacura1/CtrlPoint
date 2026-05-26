@@ -5,6 +5,7 @@ import { useAuth } from '../store/auth'
 import { apiUrl, auth as authApi } from '../api'
 
 export default function Auth() {
+  const postAuthTarget = '/deploy'
   const [searchParams] = useSearchParams()
   const [mode, setMode] = useState<'login' | 'register'>(
     searchParams.get('mode') === 'register' ? 'register' : 'login'
@@ -15,7 +16,7 @@ export default function Auth() {
   const navigate = useNavigate()
 
   useEffect(() => {
-    if (!authLoading && user) navigate('/editor', { replace: true })
+    if (!authLoading && user) navigate(postAuthTarget, { replace: true })
   }, [authLoading, user, navigate])
 
   useEffect(() => {
@@ -23,7 +24,7 @@ export default function Auth() {
     if (oauthError) setError(oauthError)
   }, [searchParams])
 
-  const done = () => navigate('/editor')
+  const done = () => navigate(postAuthTarget)
 
   const handleGoogle = async (accessToken: string) => {
     setError('')
