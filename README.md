@@ -1,6 +1,6 @@
 # CtrlPoint
 
-CtrlPoint is a web hosting server, it builds and deploys web apps to Massa DeWeb. The platform supports browser-based builds, file uploads, GitHub deploys, and an agent API for x402-paid deployments.
+CtrlPoint is a web hosting service, it builds and deploys web apps to Massa DeWeb. The platform supports browser-based builds, file uploads, GitHub deploys, and an agent API for x402-paid deployments.
 
 ## Project Layout
 
