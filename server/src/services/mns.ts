@@ -41,13 +41,23 @@ export function mnsRegistrationMasCost(name: string): number {
 }
 
 export function mnsRegistrationCreditCost(name: string): number {
-  return name.length < MIN_SPONSORED_MNS_NAME_LENGTH ? mnsRegistrationMasCost(name) : 0
+  if (name.length >= MIN_SPONSORED_MNS_NAME_LENGTH) return 0
+
+  const masUsdPrice = Number.isFinite(cfg.mnsMasUsdPrice) && cfg.mnsMasUsdPrice > 0 ? cfg.mnsMasUsdPrice : 0.0033
+  const creditUsdValue = Number.isFinite(cfg.mnsCreditUsdValue) && cfg.mnsCreditUsdValue > 0 ? cfg.mnsCreditUsdValue : 0.25
+  const marginMultiplier =
+    Number.isFinite(cfg.mnsCreditMarginMultiplier) && cfg.mnsCreditMarginMultiplier > 0
+      ? cfg.mnsCreditMarginMultiplier
+      : 2
+
+  const usdCost = mnsRegistrationMasCost(name) * masUsdPrice * marginMultiplier
+  return Math.max(1, Math.ceil(usdCost / creditUsdValue))
 }
 
 export function mnsRegistrationMessage(name: string): string {
   const creditCost = mnsRegistrationCreditCost(name)
   if (creditCost <= 0) return `${MIN_SPONSORED_MNS_NAME_LENGTH}+ character MNS names are free right now.`
-  return `Short MNS names cost ${creditCost.toLocaleString()} credit${creditCost === 1 ? '' : 's'}. ${MIN_SPONSORED_MNS_NAME_LENGTH}+ character names are free right now.`
+  return `Short MNS names cost ${creditCost.toLocaleString()} credit${creditCost === 1 ? '' : 's'}. ${MIN_SPONSORED_MNS_NAME_LENGTH}+ character names stay free.`
 }
 
 export async function checkMnsAvailable(name: string): Promise<boolean> {

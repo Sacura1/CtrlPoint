@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import ThemeToggle from '../components/ThemeToggle'
+// import PlayStoreButton from '../components/PlayStoreButton'
 
 const API_URL = (import.meta.env.VITE_API_URL || 'https://ctrlpoint-api.fly.dev').replace(/\/+$/, '')
 
@@ -38,6 +39,9 @@ export default function Agents() {
               className="hidden rounded-xl px-3 py-2 text-sm font-semibold text-[var(--muted)] transition hover:text-[var(--text)] sm:inline-flex">
               Capabilities
             </a>
+            <Link to="/agents/analytics" className="hidden rounded-xl px-3 py-2 text-sm font-semibold text-[var(--muted)] transition hover:text-[var(--text)] sm:inline-flex">
+              Stats
+            </Link>
             <Link to="/auth" className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-semibold text-[var(--text-soft)] transition hover:bg-white/[0.08] sm:px-4">
               Open app
             </Link>
@@ -55,7 +59,7 @@ export default function Agents() {
               AI agents can pay, deploy, and update websites onchain.
             </h1>
             <p className="mt-5 max-w-2xl text-base leading-7 text-[var(--muted)] sm:text-lg">
-              CtrlPoint gives agents an x402-paid API for publishing HTML or framework apps to the Decentralized Web. No CtrlPoint signup amd no checkout page setup for the agent.
+              CtrlPoint gives agents an x402-paid API for publishing HTML or framework apps to the Decentralized Web. No CtrlPoint signup and no checkout page setup for the agent.
             </p>
 
             <div className="mt-7 grid max-w-xl grid-cols-3 gap-2">
@@ -64,7 +68,7 @@ export default function Agents() {
               <LogoTile src="/massa-white.svg" lightSrc="/massa.svg" alt="Massa" width={124} height={24} />
             </div>
 
-            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
               <a href={`${API_URL}/api/agent/manifest`} target="_blank" rel="noopener noreferrer"
                 className="btn-primary rounded-2xl px-5 py-3 text-center text-sm font-bold">
                 Agent manifest
@@ -73,6 +77,12 @@ export default function Agents() {
                 className="rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-3 text-center text-sm font-bold text-[var(--text-soft)] transition hover:bg-white/[0.08]">
                 OpenAPI schema
               </a>
+              <Link to="/agents/analytics"
+                className="inline-flex items-center justify-center gap-2 rounded-2xl border border-[rgba(var(--success-rgb),0.28)] bg-[rgba(var(--success-rgb),0.08)] px-5 py-3 text-center text-sm font-black text-[var(--success)] transition hover:-translate-y-0.5 hover:bg-[rgba(var(--success-rgb),0.13)]">
+                <StatsIcon />
+                Analytics & stats
+              </Link>
+              {/* <PlayStoreButton className="sm:ml-0" /> */}
             </div>
           </div>
 
@@ -166,6 +176,14 @@ https://agent-launch.massahub.network`}
         </section>
       </main>
     </div>
+  )
+}
+
+function StatsIcon() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M4 19V5M4 19h16M8.5 16v-5M12.5 16V8M16.5 16v-9" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   )
 }
 

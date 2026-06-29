@@ -46,6 +46,7 @@ const allowedOrigins = uniqueOrigins([
   ...defaultClientOrigins,
 ])
 const mnsPublicDomain = normalizeHost(process.env.MNS_PUBLIC_DOMAIN || 'massahub.network')
+const adminEmails = parseCsv(process.env.ADMIN_EMAILS).map(email => email.toLowerCase())
 
 export const cfg = {
   port: parseInt(process.env.PORT || (process.env.NODE_ENV === 'production' ? '8000' : '3001')),
@@ -53,17 +54,22 @@ export const cfg = {
   jwtExpiresIn: '7d',
 
   googleClientId: process.env.GOOGLE_CLIENT_ID || '',
+  resendApiKey: process.env.RESEND_API_KEY || '',
+  resendFromEmail: process.env.RESEND_FROM_EMAIL || 'CtrlPoint <onboarding@resend.dev>',
 
   // AI provider: 'anthropic' uses Claude, 'openai' uses GPT
   aiProvider: (process.env.AI_PROVIDER || 'anthropic') as 'anthropic' | 'openai',
   anthropicKey: process.env.ANTHROPIC_API_KEY || '',
   anthropicModel: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6',
   openaiKey: process.env.OPENAI_API_KEY || '',
-  openaiModel: process.env.OPENAI_MODEL || 'gpt-4o',
+  openaiModel: process.env.OPENAI_MODEL || 'gpt-5.4-mini',
 
   massaNodeUrl: process.env.MASSA_NODE_URL || 'https://mainnet.massa.net/api/v2',
   massaSecretKey: process.env.MASSA_PLATFORM_SECRET_KEY || '',
   massaNetwork: (process.env.MASSA_NETWORK || 'mainnet') as 'mainnet' | 'buildnet',
+  mnsMasUsdPrice: parseFloat(process.env.MNS_MAS_USD_PRICE || '0.0033'),
+  mnsCreditUsdValue: parseFloat(process.env.MNS_CREDIT_USD_VALUE || '0.25'),
+  mnsCreditMarginMultiplier: parseFloat(process.env.MNS_CREDIT_MARGIN_MULTIPLIER || '2'),
 
   stripeSecretKey: process.env.STRIPE_SECRET_KEY || '',
   stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET || '',
@@ -72,17 +78,48 @@ export const cfg = {
   polarWebhookSecret: process.env.POLAR_WEBHOOK_SECRET || '',
   polarEnvironment: (process.env.POLAR_ENVIRONMENT || 'production') as 'production' | 'sandbox',
   polarProducts: {
+    launch: process.env.POLAR_LAUNCH_PRODUCT_ID || '',
     starter: process.env.POLAR_STARTER_PRODUCT_ID || '',
     builder: process.env.POLAR_BUILDER_PRODUCT_ID || '',
     pro: process.env.POLAR_PRO_PRODUCT_ID || '',
     studio: process.env.POLAR_STUDIO_PRODUCT_ID || '',
+  },
+  googlePlayPackageName: process.env.GOOGLE_PLAY_PACKAGE_NAME || 'dev.ctrlpoint.app',
+  googlePlayServiceAccountJson: process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON || '',
+  googlePlayServiceAccountFile: process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_FILE || '',
+  googlePlayProducts: {
+    launch: process.env.GOOGLE_PLAY_LAUNCH_PRODUCT_ID || 'credits_launch',
+    starter: process.env.GOOGLE_PLAY_STARTER_PRODUCT_ID || 'credits_starter',
+    builder: process.env.GOOGLE_PLAY_BUILDER_PRODUCT_ID || 'credits_builder',
+    pro: process.env.GOOGLE_PLAY_PRO_PRODUCT_ID || 'credits_pro',
+    studio: process.env.GOOGLE_PLAY_STUDIO_PRODUCT_ID || 'credits_studio',
   },
 
   clientUrl: explicitClientUrl || allowedOrigins[0],
   apiPublicUrl: process.env.API_PUBLIC_URL || '',
   allowedOrigins,
   mnsPublicDomain: mnsPublicDomain || 'massahub.network',
+  dewebProviderHealthUrl: process.env.DEWEB_PROVIDER_HEALTH_URL || `https://${mnsPublicDomain || 'massahub.network'}/__deweb_info`,
+  dewebProviderHealthPollMs: parseInt(process.env.DEWEB_PROVIDER_HEALTH_POLL_MS || '60000'),
+  dewebProviderHealthTimeoutMs: parseInt(process.env.DEWEB_PROVIDER_HEALTH_TIMEOUT_MS || '5000'),
+  customDomainCnameTarget: normalizeHost(process.env.CUSTOM_DOMAIN_CNAME_TARGET || (mnsPublicDomain || 'massahub.network')),
+  customDomainARecords: parseCsv(process.env.CUSTOM_DOMAIN_A_RECORDS),
+  customDomainMonitorPollMs: parseInt(process.env.CUSTOM_DOMAIN_MONITOR_POLL_MS || '600000'),
+  customDomainMonitorIdlePollMs: parseInt(process.env.CUSTOM_DOMAIN_MONITOR_IDLE_POLL_MS || '86400000'),
+  customDomainMonitorActivePollMs: parseInt(process.env.CUSTOM_DOMAIN_MONITOR_ACTIVE_POLL_MS || '259200000'),
+  customDomainMonitorBatchSize: parseInt(process.env.CUSTOM_DOMAIN_MONITOR_BATCH_SIZE || '10'),
+  customDomainRouteCacheMs: parseInt(process.env.CUSTOM_DOMAIN_ROUTE_CACHE_MS || '300000'),
+  adminEmails,
+  adminAlertWebhookUrl: process.env.ADMIN_ALERT_WEBHOOK_URL || '',
   nodeEnv: process.env.NODE_ENV || 'development',
+
+  arc: {
+    rpcUrl: process.env.ARC_RPC_URL || 'https://rpc.testnet.arc.network',
+    chainId: parseInt(process.env.ARC_CHAIN_ID || '5042002'),
+    explorerUrl: (process.env.ARC_EXPLORER_URL || 'https://testnet.arcscan.app').replace(/\/+$/, ''),
+    deployerPrivateKey: process.env.ARC_DEPLOYER_PRIVATE_KEY || '',
+    agentLedgerAddress: process.env.ARC_AGENT_LEDGER_CONTRACT_ADDRESS || '',
+  },
 
   // AES-256-GCM key for encrypting user API keys (32-byte hex string)
   encryptionKey: process.env.ENCRYPTION_KEY || 'dev00000000000000000000000000000000000000000000000000000000000000',
@@ -102,8 +139,10 @@ export const cfg = {
 
   // Feature flags
   enableModelSelection: process.env.ENABLE_MODEL_SELECTION === 'true',
+  enableArcBuilder: process.env.ENABLE_ARC_BUILDER === 'true',
   enableDeployWorker: process.env.ENABLE_DEPLOY_WORKER !== 'false',
   deployWorkerPollMs: parseInt(process.env.DEPLOY_WORKER_POLL_MS || '3000'),
+  deployWorkerIdlePollMs: parseInt(process.env.DEPLOY_WORKER_IDLE_POLL_MS || '86400000'),
   deployWorkerStaticConcurrency: parseInt(process.env.DEPLOY_WORKER_STATIC_CONCURRENCY || '3'),
   deployWorkerFrameworkConcurrency: parseInt(process.env.DEPLOY_WORKER_FRAMEWORK_CONCURRENCY || '1'),
 

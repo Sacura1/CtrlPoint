@@ -1,11 +1,10 @@
 import { DeployJob, DeploymentStatus } from '../types'
-import { PrismaClient } from '@prisma/client'
+import prisma from '../lib/prisma'
 import { uploadSite } from './massa'
 import { registerMns } from './mns'
 import { cfg } from '../config'
 import { refundMnsRegistrationCreditsForDeployment } from './credits'
 
-const prisma = new PrismaClient()
 
 // In-memory job store for status polling
 const jobs = new Map<string, DeployJob>()
@@ -102,6 +101,10 @@ async function runDeploy(
 
     log(id, `Deployment COMPLETE — https://${params.mnsName}.${cfg.mnsPublicDomain}`)
     updateJob(job.id, { status: 'COMPLETE', step: 'Live!' })
+    await prisma.deployment.updateMany({
+      where: { siteId: params.siteId, id: { not: id }, status: 'COMPLETE' },
+      data: { status: 'SUPERSEDED', step: 'Superseded by a newer deployment.', updatedAt: new Date() },
+    })
     await updateDeploymentDb(id, 'COMPLETE', { scAddress, step: 'Live!' })
     await prisma.site.update({
       where: { id: params.siteId },

@@ -1,11 +1,10 @@
 import { Response, NextFunction } from 'express'
 import jwt from 'jsonwebtoken'
-import { PrismaClient } from '@prisma/client'
+import prisma from '../lib/prisma'
 import { cfg } from '../config'
 import { AuthRequest, AuthPayload, AgentAuthRequest } from '../types'
 import { hashAgentKey, readAgentKeyHeader } from '../services/agentKeys'
 
-const prisma = new PrismaClient()
 
 export function requireAuth(req: AuthRequest, res: Response, next: NextFunction) {
   const token = req.cookies?.token || req.headers.authorization?.replace('Bearer ', '')
@@ -22,6 +21,17 @@ export function requireAuth(req: AuthRequest, res: Response, next: NextFunction)
   } catch {
     res.status(401).json({ error: 'Invalid or expired token' })
   }
+}
+
+export function requireAdmin(req: AuthRequest, res: Response, next: NextFunction) {
+  requireAuth(req, res, () => {
+    const email = req.user?.email?.toLowerCase()
+    if (!email || !cfg.adminEmails.includes(email)) {
+      res.status(403).json({ error: 'Admin access required' })
+      return
+    }
+    next()
+  })
 }
 
 export function signToken(payload: AuthPayload): string {

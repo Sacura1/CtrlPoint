@@ -22,6 +22,11 @@ server/node_modules/
 client/node_modules/
 ctrlpoint-app/node_modules/
 ctrlpoint-app/.expo/
+ctrlpoint-app/private.json
+ctrlpoint-app/keystore/
+ctrlpoint-app/google-services.json
+ctrlpoint-app/android/app/google-services.json
+ctrlpoint-app/android/keystore.properties
 
 # Logs
 logs
@@ -45,3 +50,37 @@ Thumbs.db
 
 # Optional: coverage
 coverage/
+
+# Local utility scripts and one-off instruction notes
+/scripts/**/*.cjs
+/server/scripts/**/*.cjs
+/server/*.cjs
+/*.md
+!/README.md
+/scripts/**/*.md
+
+# Generated React Native splash assets
+/ctrlpoint-app/assets/logo-splash.png
+/ctrlpoint-app/android/app/src/main/res/**/splashscreen_logo*.png
+
+# React Native / Android local artifacts
+/ctrlpoint-app/android/.gradle/
+/ctrlpoint-app/android/.kotlin/
+/ctrlpoint-app/android/**/.cxx/
+/ctrlpoint-app/android/**/build/
+/ctrlpoint-app/android/local.properties
+/ctrlpoint-app/android/app/debug.keystore
+/ctrlpoint-app/android/app/*.jks
+/ctrlpoint-app/android/app/*.keystore
+/ctrlpoint-app/**/*.apk
+/ctrlpoint-app/**/*.aab
+/ctrlpoint-app/expo.err
+/ctrlpoint-app/expo.out
+/ctrlpoint-app/*.jks
+/ctrlpoint-app/*.keystore
+/ctrlpoint-app/*credentials*.json
+/ctrlpoint-app/*service-account*.json
+
+# Runtime error logs
+*.err
+

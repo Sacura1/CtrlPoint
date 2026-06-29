@@ -1,0 +1,47 @@
+{
+  "expo": {
+    "name": "CtrlPoint",
+    "slug": "ctrlpoint-app",
+    "scheme": [
+      "ctrlpoint",
+      "dev.ctrlpoint.app"
+    ],
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "plugins": [
+      "expo-iap",
+      "expo-notifications"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "dev.ctrlpoint.app"
+    },
+    "android": {
+      "package": "dev.ctrlpoint.app",
+      "versionCode": 20,
+      "edgeToEdgeEnabled": true,
+      "googleServicesFile": "./google-services.json",
+      "permissions": [
+        "android.permission.POST_NOTIFICATIONS"
+      ]
+    },
+    "extra": {
+      "apiUrl": "https://ctrlpoint-api.fly.dev",
+      "webUrl": "https://ctrlpoint.dev",
+      "mnsPublicDomain": "ctrlpoint.app",
+      "expoProjectId": "440acc03-2097-434c-bf5f-6ed1a432f7eb",
+      "googleExpoClientId": "",
+      "googleIosClientId": "",
+      "googleAndroidClientId": "298914825619-nce094rc37j9noinhv67rc0vjbkmceeh.apps.googleusercontent.com",
+      "googleWebClientId": "",
+      "eas": {
+        "projectId": "440acc03-2097-434c-bf5f-6ed1a432f7eb"
+      }
+    },
+    "owner": "sacuramec"
+  }
+}

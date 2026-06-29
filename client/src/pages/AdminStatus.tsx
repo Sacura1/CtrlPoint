@@ -24,8 +24,6 @@ export default function AdminStatus() {
 
   useEffect(() => {
     load()
-    const id = setInterval(load, 60_000)
-    return () => clearInterval(id)
   }, [])
 
   return (
@@ -35,7 +33,7 @@ export default function AdminStatus() {
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h1 className="text-2xl font-black" style={{ color: 'var(--text)' }}>Admin Status</h1>
-            <p className="mt-1 text-sm" style={{ color: 'var(--muted)' }}>Product metrics, health checks, errors, and support inbox.</p>
+            <p className="mt-1 text-sm" style={{ color: 'var(--muted)' }}>Product metrics, health checks, errors, and support inbox. Local guest test accounts are separated from real user counts.</p>
           </div>
           <button
             onClick={() => load(true)}
@@ -62,7 +60,8 @@ export default function AdminStatus() {
               <Metric label="Completed deploys" value={data.totals.completedDeployments} />
               <Metric label="Connected repos" value={data.totals.connectedRepos} />
               <Metric label="Open tickets" value={data.totals.openTickets} />
-              <Metric label="Users" value={data.totals.users} />
+              <Metric label="Real users" value={data.totals.users} />
+              <Metric label="Local guests" value={data.totals.localGuestUsers} />
             </div>
 
             <Panel title="Endpoint status" subtitle="Live checks for the API process, database query path, and DeWeb provider.">
@@ -119,7 +118,7 @@ export default function AdminStatus() {
             </Panel>
 
             <div className="grid gap-6 lg:grid-cols-3">
-              <Panel title="Daily logins" subtitle="Login events recorded per UTC day. DAU/MAU above are unique users.">
+              <Panel title="Daily logins" subtitle="Login events recorded per UTC day. DAU/MAU above are unique real users; local guest tests are excluded.">
                 <MiniBars rows={data.daily.logins} emptyText="No login events recorded yet." />
               </Panel>
               <Panel title="Generated Per Day" subtitle="Daily site records created, including AI-generated drafts.">

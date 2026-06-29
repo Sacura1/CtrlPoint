@@ -3,30 +3,12 @@ import { useParams, useNavigate } from 'react-router-dom'
 import Header from '../components/Header'
 import Preview from '../components/Preview'
 import DeployModal from '../components/DeployModal'
-import { appConfig, generate as genApi, sites as sitesApi, ModelOption, ReasoningEffortOption, GenerationMode, ArcWeb3Category } from '../api'
+import { appConfig, generate as genApi, sites as sitesApi, ModelOption, GenerationMode, ArcWeb3Category } from '../api'
 import { Site } from '../types'
 import { getSiteDomain, getSiteUrl } from '../utils/siteUrl'
 import ClaimedBadge from '../components/ClaimedBadge'
 import { useAuth } from '../store/auth'
-
-const DEFAULT_MODELS: ModelOption[] = [
-  { id: 'gpt-5.4-mini', label: 'GPT-5.4 mini', full: 'GPT-5.4 mini', sub: 'Affordable GPT option', provider: 'OpenAI', cost: 2, supportsReasoning: true, reasoningEfforts: ['low', 'medium', 'high', 'xhigh'] },
-]
-const DEFAULT_REASONING_EFFORTS: Record<'openai' | 'anthropic', ReasoningEffortOption[]> = {
-  openai: [
-    { id: 'low', label: 'Low', sub: 'Faster, lower-cost reasoning' },
-    { id: 'medium', label: 'Medium', sub: 'Balanced reasoning' },
-    { id: 'high', label: 'High', sub: 'Deeper reasoning' },
-    { id: 'xhigh', label: 'XHigh', sub: 'Hardest OpenAI tasks' },
-  ],
-  anthropic: [
-    { id: 'low', label: 'Low', sub: 'Most efficient' },
-    { id: 'medium', label: 'Medium', sub: 'Balanced token savings' },
-    { id: 'high', label: 'High', sub: 'Claude default depth' },
-    { id: 'xhigh', label: 'XHigh', sub: 'Long agentic work' },
-    { id: 'max', label: 'Max', sub: 'Absolute maximum capability' },
-  ],
-}
+import { DEFAULT_MODELS, DEFAULT_REASONING_EFFORTS } from '../config/models'
 
 interface Message { role: 'user' | 'assistant'; content: string }
 type MobileTab = 'chat' | 'preview'
@@ -58,7 +40,7 @@ const ARC_STARTER_PROMPTS = [
   {
     title: 'Wallet Stats',
     category: 'wallet-tools' as const,
-    prompt: 'Build an Arc Testnet wallet stats app. Let users connect or paste a wallet address and show native USDC balance, ERC-20 USDC balance, transaction count, explorer links, and a clean wallet reputation score.',
+    prompt: 'Build an Arc Testnet wallet stats app. Let users connect or paste a wallet address and show USDC balance, transaction count, explorer links, and a clean wallet reputation score.',
   },
   {
     title: 'Payment Request',
@@ -113,6 +95,7 @@ const ARC_STARTER_PROMPTS = [
 ]
 
 const ARC_CATEGORIES: Array<{ id: ArcWeb3Category; label: string; sub: string }> = [
+  { id: 'custom', label: 'Custom dApp', sub: 'Purpose-built contract' },
   { id: 'wallet-tools', label: 'Wallet Tools', sub: 'Stats, balances, receipts' },
   { id: 'payment-links', label: 'Payment Links', sub: 'USDC request pages' },
   { id: 'tip-jar', label: 'Tip Jar', sub: 'Creator support pages' },
@@ -125,6 +108,8 @@ const ARC_CATEGORIES: Array<{ id: ArcWeb3Category; label: string; sub: string }>
 ]
 
 const ARC_CONTRACT_CATEGORIES = new Set<ArcWeb3Category>([
+  'custom',
+  'payment-links',
   'split-payments',
   'voting-polls',
   'membership',
@@ -167,6 +152,7 @@ export default function Editor() {
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
   const [site, setSite] = useState<Site | null>(null)
+  const [loadingSite, setLoadingSite] = useState(Boolean(siteId))
   const [html, setHtml] = useState('')
   const [title, setTitle] = useState('New site')
   const [description, setDescription] = useState('')
@@ -180,7 +166,7 @@ export default function Editor() {
   const [error, setError] = useState('')
   const [creditError, setCreditError] = useState('')
   const [hasChanges, setHasChanges] = useState(false)
-  const [mobileTab, setMobileTab] = useState<MobileTab>('chat')
+  const [mobileTab, setMobileTab] = useState<MobileTab>(() => siteId ? 'preview' : 'chat')
   const [generationMode, setGenerationMode] = useState<GenerationMode>('site')
   const [arcCategory, setArcCategory] = useState<ArcWeb3Category | ''>('')
   const [modelSelectionEnabled, setModelSelectionEnabled] = useState(false)
@@ -240,6 +226,7 @@ export default function Editor() {
 
   useEffect(() => {
     if (!siteId) {
+      setLoadingSite(false)
       // Check for uploaded file pre-load
       const raw = sessionStorage.getItem('ctrlpoint_upload')
       if (raw) {
@@ -254,6 +241,7 @@ export default function Editor() {
       }
       return
     }
+    setLoadingSite(true)
     sitesApi.get(siteId)
       .then(({ site }) => {
         setSite(site)
@@ -262,8 +250,10 @@ export default function Editor() {
         setDescription(site.description)
         setHasChanges(site.needsDeploy)
         setMessages([{ role: 'assistant', content: 'What would you like to change?' }])
+        setMobileTab('preview')
       })
       .catch(() => navigate('/dashboard'))
+      .finally(() => setLoadingSite(false))
   }, [siteId])
 
   useEffect(() => {
@@ -487,7 +477,7 @@ useEffect(() => {
         </button>
 
         {/* Mobile toggle */}
-        {html && (
+        {(html || loadingSite) && (
           <div className="flex sm:hidden items-center gap-2">
             <button
               onClick={startNewChat}
@@ -554,7 +544,7 @@ useEffect(() => {
           editor-chat-panel
           flex flex-col min-h-0 flex-shrink-0
           w-full sm:w-80 lg:w-96
-          ${html || generating ? (mobileTab === 'chat' ? 'flex' : 'hidden sm:flex') : 'flex'}
+          ${html || generating || loadingSite ? (mobileTab === 'chat' ? 'flex' : 'hidden sm:flex') : 'flex'}
         `} style={{ borderRight: '1px solid var(--line)' }}>
 
           {/* Messages */}
@@ -616,7 +606,7 @@ useEffect(() => {
                       {selectedArcCategory ? 'Matches selected type' : 'Choose a category first'}
                     </p>
                   </div>
-                  {selectedArcCategory ? (
+                  {selectedArcCategory && visibleStarterPrompts.length > 0 ? (
                     <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
                       {visibleStarterPrompts.map(item => (
                       <button
@@ -637,6 +627,11 @@ useEffect(() => {
                         </span>
                       </button>
                       ))}
+                    </div>
+                  ) : selectedArcCategory === 'custom' ? (
+                    <div className="rounded-xl px-3 py-2 text-xs leading-5"
+                      style={{ color: 'var(--muted)', background: 'color-mix(in srgb, var(--panel-2) 70%, transparent)', border: '1px solid var(--line)' }}>
+                      Describe the exact product, its users, and the onchain action. CtrlPoint will design a focused contract and interface for it.
                     </div>
                   ) : (
                     <div className="rounded-xl px-3 py-2 text-xs"
@@ -944,10 +939,16 @@ useEffect(() => {
         {/* Preview panel */}
         <div className={`
           flex-1 min-h-0 p-3 sm:p-4
-          ${html || generating ? (mobileTab === 'preview' ? 'flex' : 'hidden sm:flex') : 'hidden sm:flex'}
+          ${html || generating || loadingSite ? (mobileTab === 'preview' ? 'flex' : 'hidden sm:flex') : 'hidden sm:flex'}
           flex-col
         `}>
-          <Preview html={html} generating={generating} className="flex-1 min-h-0" />
+          <Preview
+            html={html}
+            generating={generating}
+            loading={loadingSite}
+            publicUrl={site ? liveSiteUrl : undefined}
+            className="flex-1 min-h-0"
+          />
         </div>
       </div>
 

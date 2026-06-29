@@ -1,12 +1,20 @@
 import { Router, Response } from 'express'
-import { PrismaClient } from '@prisma/client'
+import prisma from '../lib/prisma'
 import { requireAuth } from '../middleware/auth'
 import { AppError } from '../middleware/errorHandler'
 import { AuthRequest } from '../types'
 import { transferMnsOwnership } from '../services/mns'
 
 const router = Router()
-const prisma = new PrismaClient()
+
+function primaryCustomDomain(site: any) {
+  return site.customDomains?.[0]?.domain ?? null
+}
+
+function serializeSite(site: any) {
+  const { customDomains, ...rest } = site
+  return { ...rest, customDomain: primaryCustomDomain(site) }
+}
 
 function validateMnsName(mnsName: string) {
   if (!/^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$/.test(mnsName))
@@ -26,35 +34,53 @@ async function assertMnsNameAvailable(mnsName: string, excludeSiteId?: string) {
 router.get('/', requireAuth, async (req: AuthRequest, res: Response, next) => {
   try {
     const sites = await prisma.site.findMany({
-      where: { userId: req.user!.userId },
+      where: { userId: req.user!.userId, kind: 'WEBSITE' },
       orderBy: { createdAt: 'desc' },
       select: {
         id: true, mnsName: true, scAddress: true, status: true,
         title: true, description: true, createdAt: true, updatedAt: true,
         lastPrompt: true, needsDeploy: true,
         ownershipClaimed: true, ownershipClaimedAt: true, ownershipClaimedTo: true,
+        customDomains: {
+          where: { status: 'ACTIVE' },
+          select: { domain: true },
+          orderBy: [{ becameActiveAt: 'asc' }, { createdAt: 'asc' }],
+          take: 1,
+        },
       },
     })
-    res.json({ sites })
+    res.json({ sites: sites.map(serializeSite) })
   } catch (err) { next(err) }
 })
 
 // Get one site (including code for editing)
 router.get('/:siteId', requireAuth, async (req: AuthRequest, res: Response, next) => {
   try {
-    const site = await prisma.site.findUnique({ where: { id: req.params.siteId as string } })
+    const site = await prisma.site.findUnique({
+      where: { id: req.params.siteId as string },
+      include: {
+        customDomains: {
+          where: { status: 'ACTIVE' },
+          select: { domain: true },
+          orderBy: [{ becameActiveAt: 'asc' }, { createdAt: 'asc' }],
+          take: 1,
+        },
+      },
+    })
     if (!site) throw new AppError(404, 'Site not found.')
     if (site.userId !== req.user!.userId) throw new AppError(403, 'Access denied.')
-    res.json({ site })
+    if (site.kind !== 'WEBSITE') throw new AppError(404, 'Web-app not found.')
+    res.json({ site: serializeSite(site) })
   } catch (err) { next(err) }
 })
 
 // Create draft site (before deployment)
 router.post('/', requireAuth, async (req: AuthRequest, res: Response, next) => {
   try {
-    const { mnsName, generatedCode, title, description, lastPrompt } = req.body
+    const { mnsName, generatedCode, title, description, lastPrompt, arcCategory } = req.body
 
     if (!mnsName || !generatedCode) throw new AppError(400, 'mnsName and generatedCode are required.')
+    if (typeof arcCategory === 'string') throw new AppError(404, 'Arc Web3 is disabled.')
 
     // Validate MNS name format
     if (!/^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$/.test(mnsName))
@@ -66,8 +92,7 @@ router.post('/', requireAuth, async (req: AuthRequest, res: Response, next) => {
     const existing = await prisma.site.findUnique({ where: { mnsName } })
     if (existing) throw new AppError(409, `The name "${mnsName}" is already taken. Choose a different name.`)
 
-    const site = await prisma.site.create({
-      data: {
+    const data: any = {
         userId: req.user!.userId,
         mnsName,
         generatedCode,
@@ -75,7 +100,18 @@ router.post('/', requireAuth, async (req: AuthRequest, res: Response, next) => {
         description: description || '',
         lastPrompt,
         status: 'DRAFT',
-      },
+        ...(typeof arcCategory === 'string' ? {
+          arcDapp: {
+            create: {
+              userId: req.user!.userId,
+              category: arcCategory,
+              status: ['split-payments', 'voting-polls', 'membership', 'games'].includes(arcCategory) ? 'NEEDS_CONTRACT' : 'FRONTEND_ONLY',
+            },
+          },
+        } : {}),
+      }
+    const site = await prisma.site.create({
+      data,
     })
     res.status(201).json({ site })
   } catch (err) { next(err) }
@@ -87,6 +123,7 @@ router.patch('/:siteId', requireAuth, async (req: AuthRequest, res: Response, ne
     const site = await prisma.site.findUnique({ where: { id: req.params.siteId as string } })
     if (!site) throw new AppError(404, 'Site not found.')
     if (site.userId !== req.user!.userId) throw new AppError(403, 'Access denied.')
+    if (site.kind !== 'WEBSITE') throw new AppError(404, 'Web-app not found.')
     if (site.scAddress || site.status === 'LIVE' || site.status === 'DEPLOYING' || site.status === 'UPDATING') {
       throw new AppError(409, 'Only undeployed drafts can be renamed here.')
     }
@@ -115,6 +152,7 @@ router.delete('/:siteId', requireAuth, async (req: AuthRequest, res: Response, n
     const site = await prisma.site.findUnique({ where: { id: req.params.siteId as string } })
     if (!site) throw new AppError(404, 'Site not found.')
     if (site.userId !== req.user!.userId) throw new AppError(403, 'Access denied.')
+    if (site.kind !== 'WEBSITE') throw new AppError(404, 'Web-app not found.')
     if (site.status === 'DEPLOYING' || site.status === 'UPDATING')
       throw new AppError(409, 'Cannot delete a site that is currently deploying.')
 
@@ -130,13 +168,42 @@ router.get('/:siteId/deployments', requireAuth, async (req: AuthRequest, res: Re
     if (!site) throw new AppError(404, 'Site not found.')
     if (site.userId !== req.user!.userId) throw new AppError(403, 'Access denied.')
 
-    const deployments = await prisma.deployment.findMany({
+    const rows = await prisma.deployment.findMany({
       where: { siteId: req.params.siteId as string },
       orderBy: { createdAt: 'desc' },
       take: 30,
-      select: { id: true, type: true, status: true, source: true, commitSha: true, step: true, errorMsg: true, scAddress: true, createdAt: true, updatedAt: true },
+      select: { id: true, type: true, status: true, source: true, commitSha: true, step: true, errorMsg: true, scAddress: true, buildLog: true, createdAt: true, updatedAt: true },
+    })
+    let foundCurrent = false
+    const deployments = rows.map(deployment => {
+      const { buildLog, ...rest } = deployment
+      const row = { ...rest, buildLogAvailable: Boolean(buildLog?.trim()) }
+      if (deployment.status !== 'COMPLETE') return row
+      if (!foundCurrent) {
+        foundCurrent = true
+        return row
+      }
+      return { ...row, status: 'SUPERSEDED', step: deployment.step || 'Superseded by a newer deployment.' }
     })
     res.json({ deployments })
+  } catch (err) { next(err) }
+})
+
+// Get build logs for one deployment owned by the current user
+router.get('/:siteId/deployments/:deploymentId/logs', requireAuth, async (req: AuthRequest, res: Response, next) => {
+  try {
+    const deployment = await prisma.deployment.findUnique({
+      where: { id: req.params.deploymentId as string },
+      select: {
+        id: true,
+        siteId: true,
+        buildLog: true,
+        site: { select: { userId: true } },
+      },
+    })
+    if (!deployment || deployment.siteId !== req.params.siteId) throw new AppError(404, 'Deployment not found.')
+    if (deployment.site.userId !== req.user!.userId) throw new AppError(403, 'Access denied.')
+    res.json({ logs: deployment.buildLog || '' })
   } catch (err) { next(err) }
 })
 

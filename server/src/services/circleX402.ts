@@ -1,6 +1,6 @@
 import crypto from 'crypto'
 import { RequestHandler } from 'express'
-import { PrismaClient } from '@prisma/client'
+import prisma from '../lib/prisma'
 import { cfg } from '../config'
 import { AgentAuthRequest } from '../types'
 
@@ -15,7 +15,6 @@ const { createGatewayMiddleware } = require('@circle-fin/x402-batching/server') 
   }
 }
 
-const prisma = new PrismaClient()
 
 type GatewayInstance = ReturnType<typeof createGatewayMiddleware>
 

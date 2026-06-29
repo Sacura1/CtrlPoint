@@ -16,8 +16,18 @@ import keysRoutes from './routes/keys'
 import uploadRoutes from './routes/upload'
 import githubRoutes from './routes/github'
 import agentRoutes from './routes/agent'
+import customDomainRoutes from './routes/customDomains'
+import arcDappRoutes from './routes/arcDapps'
+import supportRoutes from './routes/support'
+import adminRoutes from './routes/admin'
+import notificationRoutes from './routes/notifications'
+import templateRoutes from './routes/templates'
 import { startDeployWorker } from './services/deployWorker'
-import { CLAUDE_REASONING_EFFORTS, MODEL_CATALOG, OPENAI_REASONING_EFFORTS } from './services/ai'
+import { CLAUDE_REASONING_EFFORTS, MODEL_CATALOG, OPENAI_REASONING_EFFORTS, isAllowedModel } from './services/ai'
+import { checkProviderHealth, getProviderHealth, startProviderMonitor } from './services/providerMonitor'
+import { startCustomDomainMonitor } from './services/customDomainMonitor'
+import { startPushReminderWorker } from './services/pushNotifications'
+import { startArcBuildWorker } from './services/arcBuildWorker'
 
 validateConfig()
 
@@ -48,9 +58,10 @@ app.use(express.json({ limit: '10mb' }))
 
 // API routes
 app.get('/api/config', (_, res) => {
+  const configuredModel = cfg.aiProvider === 'openai' ? cfg.openaiModel : cfg.anthropicModel
   res.json({
     enableModelSelection: cfg.enableModelSelection,
-    activeModel: cfg.aiProvider === 'openai' ? cfg.openaiModel : cfg.anthropicModel,
+    activeModel: isAllowedModel(configuredModel) ? configuredModel : MODEL_CATALOG[0].id,
     models: MODEL_CATALOG,
     reasoningEfforts: {
       openai: OPENAI_REASONING_EFFORTS,
@@ -67,9 +78,27 @@ app.use('/api/keys', keysRoutes)
 app.use('/api/upload', uploadRoutes)
 app.use('/api/github', githubRoutes)
 app.use('/api/agent', agentRoutes)
+app.use('/api/custom-domains', customDomainRoutes)
+if (cfg.enableArcBuilder) {
+  app.use('/api/arc-dapps', arcDappRoutes)
+  app.use('/api/arc', arcDappRoutes)
+} else {
+  app.use(['/api/arc-dapps', '/api/arc'], (_, res) => {
+    res.status(404).json({ error: 'Arc builder is paused.' })
+  })
+}
+app.use('/api/support', supportRoutes)
+app.use('/api/notifications', notificationRoutes)
+app.use('/api/templates', templateRoutes)
+app.use('/api/admin', adminRoutes)
 
 // Health check
 app.get('/api/health', (_, res) => res.json({ ok: true, env: cfg.nodeEnv }))
+app.get('/api/health/provider', async (req, res) => {
+  const fresh = req.query.fresh === 'true'
+  const health = fresh ? await checkProviderHealth() : getProviderHealth()
+  res.status(health.ok ? 200 : 503).json(health)
+})
 
 // Serve React build in production
 if (cfg.nodeEnv === 'production') {
@@ -86,6 +115,10 @@ app.use(errorHandler)
 app.listen(cfg.port, () => {
   console.log(`CtrlPoint server running on port ${cfg.port} [${cfg.nodeEnv}]`)
   startDeployWorker()
+  startProviderMonitor()
+  startCustomDomainMonitor()
+  startPushReminderWorker()
+  if (cfg.enableArcBuilder) startArcBuildWorker()
 })
 
 export default app

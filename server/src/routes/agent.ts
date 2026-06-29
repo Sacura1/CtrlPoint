@@ -1,5 +1,5 @@
 import { Router, Response } from 'express'
-import { PrismaClient } from '@prisma/client'
+import prisma from '../lib/prisma'
 import multer from 'multer'
 import AdmZip from 'adm-zip'
 import fs from 'fs/promises'
@@ -35,11 +35,13 @@ import {
   resolveBuildDir,
   runBuild,
   safeSubPath,
+  appendDeploymentBuildLog,
 } from '../services/githubDeploy'
 import { cfg } from '../config'
+import { wakeDeployWorker } from '../services/deployWorker'
+import { recordAgentDeploymentProof } from '../services/agentDeploymentLedger'
 
 const router = Router()
-const prisma = new PrismaClient()
 
 const ACTIVE_DEPLOY_STATUSES = ['QUEUED', 'BUILDING', 'UPLOADING', 'MNS_REGISTERING']
 const MAX_AGENT_UPLOAD_BYTES = 50 * 1024 * 1024
@@ -384,6 +386,11 @@ async function finalizeSynchronousDeployment(params: {
     }).catch(() => {}))
   }
 
+  await prisma.deployment.updateMany({
+    where: { siteId: params.site.id, id: { not: params.deploymentId }, status: 'COMPLETE' },
+    data: { status: 'SUPERSEDED', step: 'Superseded by a newer deployment.', updatedAt: new Date() },
+  })
+
   await prisma.deployment.update({
     where: { id: params.deploymentId },
     data: { status: 'COMPLETE', scAddress, step: 'Live!' },
@@ -426,8 +433,9 @@ async function deployFramework(req: AgentAuthRequest, res: Response, idempotency
   try {
     await prisma.deployment.update({
       where: { id: prepared.deployment.id },
-      data: { status: 'BUILDING', step: 'Preparing framework project...' },
+      data: { status: 'BUILDING', step: 'Preparing framework project...', buildLog: '' },
     })
+    await appendDeploymentBuildLog(prepared.deployment.id, `Agent framework deployment started for ${prepared.site.mnsName}\n`)
 
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ctrlpoint-agent-'))
     await writeZipToDirectory(file.buffer, tmpDir)
@@ -444,18 +452,20 @@ async function deployFramework(req: AgentAuthRequest, res: Response, idempotency
       where: { id: prepared.deployment.id },
       data: { status: 'BUILDING', step: 'Installing dependencies...' },
     })
-    const pm = await installDependencies(buildCwd, label)
+    const pm = await installDependencies(buildCwd, label, prepared.deployment.id)
 
     await prisma.deployment.update({
       where: { id: prepared.deployment.id },
       data: { status: 'BUILDING', step: 'Running build command...' },
     })
-    await runBuild(buildCwd, firstString(req.body.buildCommand) || 'npm run build', pm, label, buildEnv)
+    await runBuild(buildCwd, firstString(req.body.buildCommand) || 'npm run build', pm, label, buildEnv, prepared.deployment.id)
 
     const output = safeSubPath(firstString(req.body.outputDir) || 'dist', 'Output dir') || 'dist'
     const buildDir = await resolveBuildDir(buildCwd, output)
     if (!await fileExists(path.join(buildDir, 'index.html'))) {
-      throw new AppError(400, await explainMissingIndex(buildCwd, output))
+      const message = await explainMissingIndex(buildCwd, output)
+      await appendDeploymentBuildLog(prepared.deployment.id, `\n${message}\n`)
+      throw new AppError(400, message)
     }
 
     const scAddress = await finalizeSynchronousDeployment({
@@ -464,6 +474,10 @@ async function deployFramework(req: AgentAuthRequest, res: Response, idempotency
       isUpdate: prepared.isUpdate,
       buildDir,
     })
+    if (req.agentBillingMode === 'x402') {
+      await recordAgentDeploymentProof(prepared.deployment.id)
+        .catch(err => console.error(`[agent-ledger:${prepared.deployment.id.slice(0, 8)}] proof write failed:`, err?.message || err))
+    }
 
     const response = {
       siteId: prepared.site.id,
@@ -884,6 +898,170 @@ function agentPaymentPayload(req: AgentAuthRequest) {
   } : undefined
 }
 
+function parsePaymentUsd(value: string | null | undefined): number {
+  const raw = (value || '').trim()
+  if (!raw) return 0
+  const match = raw.match(/([0-9]+(?:\.[0-9]+)?)/)
+  if (!match) return 0
+  const amount = match[1]
+  if (!raw.includes('$') && /^[0-9]+$/.test(amount)) return Number(amount) / 1_000_000
+  return Number(amount)
+}
+
+function shortAddress(value: string | null | undefined): string {
+  if (!value) return 'unknown'
+  return value.length > 14 ? `${value.slice(0, 6)}...${value.slice(-4)}` : value
+}
+
+function deploymentPublicStatus(requestStatus: string, deployStatus?: string | null) {
+  if (deployStatus === 'COMPLETE') return 'delivered'
+  if (deployStatus === 'FAILED' || requestStatus === 'FAILED') return 'failed'
+  if (deployStatus === 'SUPERSEDED') return 'superseded'
+  return 'processing'
+}
+
+function publicDeploymentUrl(mnsName?: string | null) {
+  return mnsName ? mnsUrl(mnsName) : null
+}
+
+router.get('/analytics', async (_req: AgentAuthRequest, res: Response, next) => {
+  try {
+    const [requests, totalRequests] = await Promise.all([
+      prisma.agentRequest.findMany({
+        where: { paymentPayer: { not: null } },
+        orderBy: { createdAt: 'desc' },
+        take: 250,
+        select: {
+          id: true,
+          requestHash: true,
+          status: true,
+          deploymentId: true,
+          siteId: true,
+          paymentPayer: true,
+          paymentNetwork: true,
+          paymentAmount: true,
+          paymentTx: true,
+          agentProofTxHash: true,
+          agentProofContract: true,
+          agentProofError: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      }),
+      prisma.agentRequest.count({ where: { paymentPayer: { not: null } } }),
+    ])
+
+    const deploymentIds = requests.map(request => request.deploymentId).filter(Boolean) as string[]
+    const deployments = deploymentIds.length
+      ? await prisma.deployment.findMany({
+          where: { id: { in: deploymentIds } },
+          include: { site: { select: { mnsName: true, title: true, scAddress: true } } },
+        })
+      : []
+    const deploymentById = new Map(deployments.map(deployment => [deployment.id, deployment]))
+    const delivered = requests.filter(request => {
+      const deployment = request.deploymentId ? deploymentById.get(request.deploymentId) : null
+      return deployment?.status === 'COMPLETE'
+    }).length
+    const failed = requests.filter(request => {
+      const deployment = request.deploymentId ? deploymentById.get(request.deploymentId) : null
+      return request.status === 'FAILED' || deployment?.status === 'FAILED'
+    }).length
+    const volumeUsd = requests.reduce((sum, request) => sum + parsePaymentUsd(request.paymentAmount), 0)
+    const proofCount = requests.filter(request => request.agentProofTxHash).length
+
+    const completedDurations = requests
+      .map(request => {
+        const deployment = request.deploymentId ? deploymentById.get(request.deploymentId) : null
+        if (deployment?.status !== 'COMPLETE') return null
+        return Math.max(0, deployment.updatedAt.getTime() - request.createdAt.getTime())
+      })
+      .filter((value): value is number => typeof value === 'number')
+    const averageDeploySeconds = completedDurations.length
+      ? Math.round(completedDurations.reduce((sum, value) => sum + value, 0) / completedDurations.length / 1000)
+      : null
+
+    const now = new Date()
+    const daily = Array.from({ length: 14 }, (_, index) => {
+      const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - (13 - index)))
+      const key = date.toISOString().slice(0, 10)
+      const dayRequests = requests.filter(request => request.createdAt.toISOString().slice(0, 10) === key)
+      return {
+        date: key,
+        deployments: dayRequests.length,
+        delivered: dayRequests.filter(request => {
+          const deployment = request.deploymentId ? deploymentById.get(request.deploymentId) : null
+          return deployment?.status === 'COMPLETE'
+        }).length,
+        volumeUsd: Number(dayRequests.reduce((sum, request) => sum + parsePaymentUsd(request.paymentAmount), 0).toFixed(4)),
+      }
+    })
+
+    const payerStats = new Map<string, { payer: string; deployments: number; volumeUsd: number }>()
+    for (const request of requests) {
+      const payer = request.paymentPayer || 'unknown'
+      const existing = payerStats.get(payer) || { payer, deployments: 0, volumeUsd: 0 }
+      existing.deployments += 1
+      existing.volumeUsd += parsePaymentUsd(request.paymentAmount)
+      payerStats.set(payer, existing)
+    }
+
+    res.json({
+      generatedAt: new Date().toISOString(),
+      proofContract: cfg.arc.agentLedgerAddress || null,
+      explorerUrl: cfg.arc.explorerUrl,
+      stats: {
+        totalDeployments: totalRequests,
+        sampledDeployments: requests.length,
+        delivered,
+        failed,
+        processing: Math.max(0, requests.length - delivered - failed),
+        volumeUsd: Number(volumeUsd.toFixed(4)),
+        proofCount,
+        averageDeploySeconds,
+      },
+      daily,
+      topPayers: Array.from(payerStats.values())
+        .sort((a, b) => b.deployments - a.deployments || b.volumeUsd - a.volumeUsd)
+        .slice(0, 8)
+        .map(item => ({
+          payer: item.payer,
+          label: shortAddress(item.payer),
+          deployments: item.deployments,
+          volumeUsd: Number(item.volumeUsd.toFixed(4)),
+        })),
+      recent: requests.slice(0, 30).map(request => {
+        const deployment = request.deploymentId ? deploymentById.get(request.deploymentId) : null
+        const status = deploymentPublicStatus(request.status, deployment?.status)
+        return {
+          id: request.id,
+          deploymentId: request.deploymentId,
+          status,
+          source: deployment?.source || 'agent_x402',
+          payer: request.paymentPayer,
+          payerLabel: shortAddress(request.paymentPayer),
+          network: request.paymentNetwork,
+          amount: request.paymentAmount,
+          paymentTx: request.paymentTx,
+          paymentExplorerUrl: request.paymentTx && /^0x[a-fA-F0-9]{64}$/.test(request.paymentTx)
+            ? `${cfg.arc.explorerUrl}/tx/${request.paymentTx}`
+            : null,
+          proofTx: request.agentProofTxHash,
+          proofExplorerUrl: request.agentProofTxHash ? `${cfg.arc.explorerUrl}/tx/${request.agentProofTxHash}` : null,
+          proofContract: request.agentProofContract,
+          proofError: request.agentProofError,
+          mnsName: deployment?.site?.mnsName || null,
+          title: deployment?.site?.title || 'Agent deployment',
+          url: publicDeploymentUrl(deployment?.site?.mnsName),
+          artifactAddress: deployment?.scAddress || deployment?.site?.scAddress || null,
+          createdAt: request.createdAt,
+          updatedAt: deployment?.updatedAt || request.updatedAt,
+        }
+      }),
+    })
+  } catch (err) { next(err) }
+})
+
 async function handleDeploy(req: AgentAuthRequest, res: Response, idempotency?: AgentRequestRecord, mode: 'deploy_or_update' | 'update_only' = 'deploy_or_update') {
   if (isFrameworkRequest(req)) return await deployFramework(req, res, idempotency, mode)
 
@@ -914,6 +1092,7 @@ async function handleDeploy(req: AgentAuthRequest, res: Response, idempotency?: 
     message: prepared.isUpdate ? 'Agent update queued.' : 'Agent deployment queued.',
   }
   await completeAgentRequest(idempotency || { id: '', idempotencyKey: '', requestHash: '' }, response, 'QUEUED', prepared.site.id, prepared.deployment.id)
+  wakeDeployWorker()
   res.status(202).json(response)
 }
 

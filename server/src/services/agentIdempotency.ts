@@ -1,9 +1,8 @@
 import crypto from 'crypto'
-import { PrismaClient } from '@prisma/client'
+import prisma from '../lib/prisma'
 import { AgentAuthRequest } from '../types'
 import { AppError } from '../middleware/errorHandler'
 
-const prisma = new PrismaClient()
 
 export interface AgentRequestSnapshot {
   route: string

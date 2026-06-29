@@ -3,17 +3,42 @@ import { promisify } from 'util'
 import fs from 'fs/promises'
 import path from 'path'
 import os from 'os'
-import { PrismaClient } from '@prisma/client'
+import prisma from '../lib/prisma'
 import { uploadSite, uploadDirectory } from './massa'
 import { registerMns } from './mns'
 import { cfg } from '../config'
 import jwt from 'jsonwebtoken'
 
 const exec = promisify(execFile)
-const prisma = new PrismaClient()
 
 const log = (label: string, msg: string) => console.log(`[github-deploy:${label}] ${msg}`)
 type PackageManager = 'npm' | 'pnpm' | 'yarn'
+const MAX_BUILD_LOG_CHARS = 60_000
+
+function redactBuildLog(value: string): string {
+  return value
+    .replace(/https:\/\/x-access-token:[^@\s]+@github\.com/gi, 'https://x-access-token:***@github.com')
+    .replace(/(GITHUB_TOKEN|GH_TOKEN|NPM_TOKEN|OPENAI_API_KEY|ANTHROPIC_API_KEY|POLAR_ACCESS_TOKEN|STRIPE_SECRET_KEY)=\S+/gi, '$1=***')
+    .replace(/\r/g, '')
+}
+
+export async function appendDeploymentBuildLog(deploymentId: string | undefined, chunk: string) {
+  if (!deploymentId || !chunk) return
+  const clean = redactBuildLog(chunk)
+  try {
+    const current = await prisma.deployment.findUnique({
+      where: { id: deploymentId },
+      select: { buildLog: true },
+    })
+    const next = `${current?.buildLog || ''}${clean}`.slice(-MAX_BUILD_LOG_CHARS)
+    await prisma.deployment.update({
+      where: { id: deploymentId },
+      data: { buildLog: next, updatedAt: new Date() },
+    })
+  } catch {
+    // Build logs are diagnostic only; never fail a deployment because logging failed.
+  }
+}
 
 async function githubFetch(url: string, token: string) {
   const res = await fetch(url, {
@@ -23,10 +48,10 @@ async function githubFetch(url: string, token: string) {
   return res.json()
 }
 
-async function fetchGithubFile(repoOwner: string, repoName: string, branch: string, filePath: string, token: string): Promise<string | null> {
+async function fetchGithubFile(repoOwner: string, repoName: string, ref: string, filePath: string, token: string): Promise<string | null> {
   try {
     const data = await githubFetch(
-      `https://api.github.com/repos/${repoOwner}/${repoName}/contents/${filePath.replace(/^\//, '')}?ref=${branch}`,
+      `https://api.github.com/repos/${repoOwner}/${repoName}/contents/${filePath.replace(/^\//, '')}?ref=${ref}`,
       token
     ) as any
     return Buffer.from(data.content, 'base64').toString('utf8')
@@ -35,7 +60,7 @@ async function fetchGithubFile(repoOwner: string, repoName: string, branch: stri
   }
 }
 
-async function inlineGithubAssets(html: string, repoOwner: string, repoName: string, branch: string, token: string): Promise<string> {
+async function inlineGithubAssets(html: string, repoOwner: string, repoName: string, ref: string, token: string): Promise<string> {
   const cssRe = /<link[^>]+(?:rel=["']stylesheet["'][^>]*href=["']([^"']+)["']|href=["']([^"']+)["'][^>]*rel=["']stylesheet["'])[^>]*\/?>/gi
   const jsRe  = /<script([^>]*)\bsrc=["']([^"']+)["']([^>]*)><\/script>/gi
 
@@ -43,7 +68,7 @@ async function inlineGithubAssets(html: string, repoOwner: string, repoName: str
   for (const m of cssMatches) {
     const href = m[1] || m[2]
     if (!href || href.startsWith('http') || href.startsWith('//') || href.startsWith('data:')) continue
-    const content = await fetchGithubFile(repoOwner, repoName, branch, href, token)
+    const content = await fetchGithubFile(repoOwner, repoName, ref, href, token)
     if (content) html = html.replace(m[0], `<style>${content}</style>`)
   }
 
@@ -51,11 +76,22 @@ async function inlineGithubAssets(html: string, repoOwner: string, repoName: str
   for (const m of jsMatches) {
     const src = m[2]
     if (!src || src.startsWith('http') || src.startsWith('//') || src.startsWith('data:')) continue
-    const content = await fetchGithubFile(repoOwner, repoName, branch, src, token)
+    const content = await fetchGithubFile(repoOwner, repoName, ref, src, token)
     if (content) html = html.replace(m[0], `<script>${content}</script>`)
   }
 
   return html
+}
+
+async function assertStaticGithubHtmlIsDeployable(html: string, repoOwner: string, repoName: string, ref: string, token: string) {
+  const packageJson = await fetchGithubFile(repoOwner, repoName, ref, 'package.json', token)
+  const looksLikeSourceApp =
+    /<script[^>]+type=["']module["'][^>]+src=["'][^"']*\/src\//i.test(html) ||
+    /<script[^>]+src=["'][^"']*\/src\/[^"']*\.(tsx?|jsx?)["']/i.test(html)
+
+  if (looksLikeSourceApp || packageJson) {
+    throw new Error('This repository looks like a framework/source app, not a ready static site. Set Project type to Framework, then redeploy or roll back again.')
+  }
 }
 
 function githubAppJwt() {
@@ -104,12 +140,18 @@ async function detectPackageManager(repoDir: string): Promise<PackageManager> {
   return 'npm'
 }
 
-async function runCommand(command: string, args: string[], cwd: string, timeout: number, env?: NodeJS.ProcessEnv) {
+async function runCommand(command: string, args: string[], cwd: string, timeout: number, env?: NodeJS.ProcessEnv, deploymentId?: string) {
+  const printable = `${command} ${args.join(' ')}`
+  await appendDeploymentBuildLog(deploymentId, `\n$ ${redactBuildLog(printable)}\n`)
   try {
-    return await exec(command, args, { cwd, timeout, env: { ...process.env, ...(env || {}) } })
+    const result = await exec(command, args, { cwd, timeout, env: { ...process.env, ...(env || {}) } })
+    if (result.stdout) await appendDeploymentBuildLog(deploymentId, result.stdout)
+    if (result.stderr) await appendDeploymentBuildLog(deploymentId, result.stderr)
+    return result
   } catch (err: any) {
     const detail = String(err?.stderr || err?.stdout || err?.message || '').trim()
-    throw new Error(detail.slice(0, 900) || `${command} ${args.join(' ')} failed.`)
+    await appendDeploymentBuildLog(deploymentId, `${detail || err?.message || 'Command failed.'}\n`)
+    throw new Error(redactBuildLog(detail).slice(0, 900) || `${command} ${args.join(' ')} failed.`)
   }
 }
 
@@ -147,33 +189,33 @@ export function parseBuildEnv(raw: string | null | undefined): NodeJS.ProcessEnv
   return env
 }
 
-async function ensureCorepack(repoDir: string, pm: PackageManager) {
+async function ensureCorepack(repoDir: string, pm: PackageManager, deploymentId?: string) {
   if (pm === 'npm') return
-  await runCommand('corepack', ['enable'], repoDir, 60_000).catch(() => {})
+  await runCommand('corepack', ['enable'], repoDir, 60_000, undefined, deploymentId).catch(() => {})
 }
 
-export async function installDependencies(repoDir: string, label: string): Promise<PackageManager> {
+export async function installDependencies(repoDir: string, label: string, deploymentId?: string): Promise<PackageManager> {
   const pm = await detectPackageManager(repoDir)
-  await ensureCorepack(repoDir, pm)
+  await ensureCorepack(repoDir, pm, deploymentId)
 
   if (pm === 'pnpm') {
     log(label, 'Installing dependencies with pnpm...')
-    await runCommand('pnpm', ['install', '--frozen-lockfile'], repoDir, 240_000)
+    await runCommand('pnpm', ['install', '--frozen-lockfile'], repoDir, 240_000, undefined, deploymentId)
     return pm
   }
 
   if (pm === 'yarn') {
     log(label, 'Installing dependencies with yarn...')
-    await runCommand('yarn', ['install', '--frozen-lockfile'], repoDir, 240_000)
+    await runCommand('yarn', ['install', '--frozen-lockfile'], repoDir, 240_000, undefined, deploymentId)
     return pm
   }
 
   if (await fileExists(path.join(repoDir, 'package-lock.json'))) {
     log(label, 'Installing dependencies with npm ci...')
-    await runCommand('npm', ['ci', '--prefer-offline', '--no-audit'], repoDir, 240_000)
+    await runCommand('npm', ['ci', '--prefer-offline', '--no-audit'], repoDir, 240_000, undefined, deploymentId)
   } else {
     log(label, 'Installing dependencies with npm install...')
-    await runCommand('npm', ['install', '--prefer-offline', '--no-audit'], repoDir, 240_000)
+    await runCommand('npm', ['install', '--prefer-offline', '--no-audit'], repoDir, 240_000, undefined, deploymentId)
   }
   return pm
 }
@@ -265,12 +307,12 @@ function splitCommandArgs(command: string): string[] {
   return args
 }
 
-export async function runBuild(repoDir: string, buildCommand: string, pm: PackageManager, label: string, env: NodeJS.ProcessEnv) {
+export async function runBuild(repoDir: string, buildCommand: string, pm: PackageManager, label: string, env: NodeJS.ProcessEnv, deploymentId?: string) {
   const commands = splitCommandChain(buildCommand)
   for (const command of commands) {
     const [cmd, ...args] = normalizeBuildCommand(command, pm)
     log(label, `Running build command: ${[cmd, ...args].join(' ')}`)
-    await runCommand(cmd, args, repoDir, 420_000, env)
+    await runCommand(cmd, args, repoDir, 420_000, env, deploymentId)
   }
 }
 
@@ -303,19 +345,23 @@ export async function deployGitHubSite(connection: any, sha: string, deploymentI
   const { site, user, repoOwner, repoName, branch, projectType, projectRoot, buildCommand, outputDir, buildEnv, githubInstallationId } = connection
   const label = `${repoOwner}/${repoName}`
   const isInitialDeploy = !site.scAddress
+  const ref = sha && sha !== 'initial' ? sha : branch
 
   if (!githubInstallationId) {
     log(label, 'No GitHub App installation id - skipping deploy')
-    return
+    throw new Error('GitHub App installation is missing for this repository.')
   }
 
   const token = await createInstallationToken(githubInstallationId)
 
   await prisma.site.update({ where: { id: site.id }, data: { status: isInitialDeploy ? 'DEPLOYING' : 'UPDATING' } })
+  await prisma.deployment.update({ where: { id: deploymentId }, data: { buildLog: '' } }).catch(() => {})
+  await appendDeploymentBuildLog(deploymentId, `Deployment started for ${label}@${ref}\nProject type: ${projectType}\n`)
 
   let tmpDir: string | null = null
   try {
     if (projectType === 'static') {
+      await appendDeploymentBuildLog(deploymentId, 'Static deploy selected. No build command is run.\n')
       await prisma.deployment.update({
         where: { id: deploymentId },
         data: { status: 'UPLOADING', step: 'Fetching static site from GitHub...' },
@@ -323,13 +369,14 @@ export async function deployGitHubSite(connection: any, sha: string, deploymentI
       // Fetch index.html then inline any linked CSS/JS so the site is self-contained
       log(label, 'Fetching index.html from GitHub...')
       const fileData = await githubFetch(
-        `https://api.github.com/repos/${repoOwner}/${repoName}/contents/index.html?ref=${branch}`,
+        `https://api.github.com/repos/${repoOwner}/${repoName}/contents/index.html?ref=${ref}`,
         token
       ) as any
       const rawHtml = Buffer.from(fileData.content, 'base64').toString('utf8')
+      await assertStaticGithubHtmlIsDeployable(rawHtml, repoOwner, repoName, ref, token)
 
       log(label, 'Inlining linked CSS/JS assets...')
-      const html = await inlineGithubAssets(rawHtml, repoOwner, repoName, branch, token)
+      const html = await inlineGithubAssets(rawHtml, repoOwner, repoName, ref, token)
 
       const { scAddress } = await uploadSite(html, site.title, site.description, site.scAddress || undefined,
         (s) => {
@@ -348,7 +395,11 @@ export async function deployGitHubSite(connection: any, sha: string, deploymentI
       log(label, `Cloning ${repoOwner}/${repoName}@${branch} into ${tmpDir}...`)
 
       const cloneUrl = `https://x-access-token:${token}@github.com/${repoOwner}/${repoName}.git`
-      await runCommand('git', ['clone', '--depth=1', `--branch=${branch}`, cloneUrl, tmpDir], process.cwd(), 120_000)
+      await runCommand('git', ['clone', '--depth=1', `--branch=${branch}`, cloneUrl, tmpDir], process.cwd(), 120_000, undefined, deploymentId)
+      if (sha && sha !== 'initial') {
+        await runCommand('git', ['fetch', '--depth=1', 'origin', sha], tmpDir, 120_000, undefined, deploymentId).catch(() => {})
+        await runCommand('git', ['checkout', '--detach', sha], tmpDir, 120_000, undefined, deploymentId)
+      }
 
       const root = safeSubPath(projectRoot, 'Project root')
       const buildCwd = root ? path.join(tmpDir, root) : tmpDir
@@ -360,13 +411,17 @@ export async function deployGitHubSite(connection: any, sha: string, deploymentI
       const envCount = Object.keys(buildEnvVars).length
       log(label, `Using project root: ${root || '.'}${envCount ? ` with ${envCount} build env var(s)` : ''}`)
 
-      const pm = await installDependencies(buildCwd, label)
-      await runBuild(buildCwd, buildCommand, pm, label, buildEnvVars)
+      const pm = await installDependencies(buildCwd, label, deploymentId)
+      await runBuild(buildCwd, buildCommand, pm, label, buildEnvVars, deploymentId)
 
       const output = safeSubPath(outputDir || 'dist', 'Output dir') || 'dist'
       const buildDir = await resolveBuildDir(buildCwd, output)
       const indexExists = await fileExists(path.join(buildDir, 'index.html'))
-      if (!indexExists) throw new Error(await explainMissingIndex(buildCwd, output))
+      if (!indexExists) {
+        const message = await explainMissingIndex(buildCwd, output)
+        await appendDeploymentBuildLog(deploymentId, `\n${message}\n`)
+        throw new Error(message)
+      }
 
       log(label, `Uploading ${buildDir} to DeWeb...`)
       await prisma.deployment.update({ where: { id: deploymentId }, data: { status: 'UPLOADING', step: 'Uploading build output to DeWeb...' } })
@@ -397,6 +452,13 @@ async function finalizeDeploy(site: any, scAddress: string, sha: string, html?: 
   if (isInitial) {
     if (deploymentId) await prisma.deployment.update({ where: { id: deploymentId }, data: { status: 'MNS_REGISTERING', step: 'Registering domain...' } })
     await registerMns(site.mnsName, scAddress)
+  }
+
+  if (deploymentId) {
+    await prisma.deployment.updateMany({
+      where: { siteId: site.id, id: { not: deploymentId }, status: 'COMPLETE' },
+      data: { status: 'SUPERSEDED', step: 'Superseded by a newer deployment.', updatedAt: new Date() },
+    })
   }
 
   await prisma.site.update({

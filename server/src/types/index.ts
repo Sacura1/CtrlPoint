@@ -29,8 +29,8 @@ export interface AgentAuthRequest extends Request {
 }
 
 export type SiteStatus = 'DRAFT' | 'DEPLOYING' | 'LIVE' | 'ERROR' | 'UPDATING'
-export type DeploymentStatus = 'QUEUED' | 'BUILDING' | 'UPLOADING' | 'MNS_REGISTERING' | 'COMPLETE' | 'FAILED'
-export type DeploymentType = 'INITIAL' | 'UPDATE'
+export type DeploymentStatus = 'QUEUED' | 'BUILDING' | 'UPLOADING' | 'MNS_REGISTERING' | 'COMPLETE' | 'SUPERSEDED' | 'FAILED'
+export type DeploymentType = 'INITIAL' | 'UPDATE' | 'ROLLBACK'
 
 export interface DeployJob {
   id: string

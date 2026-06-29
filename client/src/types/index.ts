@@ -44,23 +44,37 @@ export interface ArcDapp {
   userId: string
   category: string
   status: string
+  prompt: string
+  model?: string | null
+  reasoningEffort?: string | null
+  buildStep?: string | null
+  progress: number
   ownerAddress?: string | null
   contractAddress?: string | null
   deployTxHash?: string | null
   explorerUrl?: string | null
+  contractName?: string | null
+  contractSummary?: string | null
+  compilerVersion?: string | null
   template?: string | null
   errorMsg?: string | null
+  buildStartedAt?: string | null
+  buildFinishedAt?: string | null
   createdAt: string
   updatedAt: string
   abi?: any[] | null
+  sourceCode?: string | null
   site?: {
     id: string
+    kind?: string
     mnsName: string
     title: string
+    description?: string
     status: string
     scAddress: string | null
     customDomain?: string | null
     needsDeploy: boolean
+    generatedCode?: string
     updatedAt: string
   }
 }
@@ -148,6 +162,7 @@ export interface SupportTicket {
 export interface AdminStatus {
   totals: {
     users: number
+    localGuestUsers: number
     generatedSites: number
     liveSites: number
     completedDeployments: number

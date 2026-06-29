@@ -1,12 +1,11 @@
 import { Router, Response } from 'express'
-import { PrismaClient } from '@prisma/client'
+import prisma from '../lib/prisma'
 import { requireAuth } from '../middleware/auth'
 import { AppError } from '../middleware/errorHandler'
 import { AuthRequest } from '../types'
 import { encrypt } from '../utils/encryption'
 
 const router = Router()
-const prisma = new PrismaClient()
 
 const VALID_PROVIDERS = ['openai', 'anthropic'] as const
 type Provider = typeof VALID_PROVIDERS[number]

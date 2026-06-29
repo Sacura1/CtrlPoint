@@ -1,0 +1,44 @@
+{
+  "name": "ctrlpoint-app",
+  "version": "1.0.0",
+  "private": true,
+  "main": "expo/AppEntry.js",
+  "scripts": {
+    "start": "set NODE_ENV=development&& react-native start",
+    "android": "set NODE_ENV=development&& react-native run-android",
+    "start:local": "set NODE_ENV=development&& set EXPO_PUBLIC_API_URL=http://localhost:3001&& set EXPO_PUBLIC_WEB_URL=http://localhost:5173&& react-native start --reset-cache",
+    "android:local": "adb reverse tcp:3001 tcp:3001 && adb reverse tcp:5173 tcp:5173 && set NODE_ENV=development&& set EXPO_PUBLIC_API_URL=http://localhost:3001&& set EXPO_PUBLIC_WEB_URL=http://localhost:5173&& react-native run-android",
+    "ios": "react-native run-ios",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@react-native-async-storage/async-storage": "^2.1.2",
+    "@react-native-community/datetimepicker": "^8.4.1",
+    "expo": "^53.0.0",
+    "expo-application": "~6.1.5",
+    "expo-asset": "~11.1.7",
+    "expo-auth-session": "^6.2.1",
+    "expo-clipboard": "~7.1.5",
+    "expo-constants": "~17.1.8",
+    "expo-crypto": "~14.1.5",
+    "expo-document-picker": "^13.1.6",
+    "expo-file-system": "~18.1.11",
+    "expo-iap": "4.2.8",
+    "expo-image-manipulator": "~13.1.7",
+    "expo-image-picker": "~16.1.4",
+    "expo-linking": "~7.1.7",
+    "expo-notifications": "^0.31.5",
+    "expo-store-review": "~8.1.5",
+    "expo-web-browser": "~14.2.0",
+    "lucide-react-native": "^0.511.0",
+    "react": "19.0.0",
+    "react-native": "0.79.2",
+    "react-native-svg": "^15.11.2",
+    "react-native-webview": "^13.13.5"
+  },
+  "devDependencies": {
+    "@react-native-community/cli": "latest",
+    "@types/react": "~19.0.10",
+    "typescript": "~5.8.3"
+  }
+}

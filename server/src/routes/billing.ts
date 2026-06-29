@@ -1,16 +1,17 @@
 import { Router, Response, Request } from 'express'
-import { PrismaClient } from '@prisma/client'
+import prisma from '../lib/prisma'
 import crypto from 'crypto'
+import { GoogleAuth } from 'google-auth-library'
 import { requireAuth } from '../middleware/auth'
 import { AppError } from '../middleware/errorHandler'
 import { AuthRequest } from '../types'
 import { cfg } from '../config'
 
 const router = Router()
-const prisma = new PrismaClient()
 
 // Credit packages
 const PACKAGES = [
+  { id: 'launch', name: 'Launch Credits', credits: 10, priceUsd: 4.99 },
   { id: 'starter', name: 'Starter Credits', credits: 25, priceUsd: 9.99 },
   { id: 'builder', name: 'Builder Credits', credits: 100, priceUsd: 34.99 },
   { id: 'pro', name: 'Pro Credits', credits: 300, priceUsd: 89.99 },
@@ -20,7 +21,7 @@ const PACKAGES = [
 type PackageId = keyof typeof cfg.polarProducts
 
 function isPackageId(value: string): value is PackageId {
-  return value === 'starter' || value === 'builder' || value === 'pro' || value === 'studio'
+  return value === 'launch' || value === 'starter' || value === 'builder' || value === 'pro' || value === 'studio'
 }
 
 function polarApiBase(): string {
@@ -31,6 +32,14 @@ function polarApiBase(): string {
 
 function polarProductId(packageId: string): string {
   return isPackageId(packageId) ? cfg.polarProducts[packageId] : ''
+}
+
+function googlePlayProductId(packageId: string): string {
+  return isPackageId(packageId) ? cfg.googlePlayProducts[packageId] : ''
+}
+
+function packageForGooglePlayProduct(productId: string) {
+  return PACKAGES.find(pkg => googlePlayProductId(pkg.id) === productId)
 }
 
 function assertPolarConfigured(packageId: string) {
@@ -83,20 +92,23 @@ async function fulfillCreditPurchase(params: {
   packageId: string
   credits: number
   paymentId: string
-  provider: 'stripe' | 'polar'
-}) {
+  provider: 'stripe' | 'polar' | 'google_play'
+}): Promise<number> {
   const existing = await prisma.creditTransaction.findFirst({
     where: { stripePaymentId: params.paymentId },
     select: { id: true },
   })
-  if (existing) return
+  if (existing) {
+    return (await prisma.user.findUnique({ where: { id: params.userId }, select: { credits: true } }))?.credits ?? 0
+  }
 
-  await prisma.$transaction([
-    prisma.user.update({
+  return prisma.$transaction(async tx => {
+    const user = await tx.user.update({
       where: { id: params.userId },
       data: { credits: { increment: params.credits } },
-    }),
-    prisma.creditTransaction.create({
+      select: { credits: true },
+    })
+    await tx.creditTransaction.create({
       data: {
         userId: params.userId,
         amount: params.credits,
@@ -104,12 +116,55 @@ async function fulfillCreditPurchase(params: {
         stripePaymentId: params.paymentId,
         note: `Purchased ${params.credits} credits via ${params.provider} (${params.packageId})`,
       },
-    }),
-  ])
+    })
+    return user.credits
+  })
 }
 
-router.get('/packages', (req: Request, res: Response) => {
-  res.json({ packages: PACKAGES })
+function googlePlayAuth() {
+  if (!cfg.googlePlayServiceAccountJson && !cfg.googlePlayServiceAccountFile) {
+    throw new AppError(503, 'Google Play billing is not configured yet.')
+  }
+
+  const options: ConstructorParameters<typeof GoogleAuth>[0] = {
+    scopes: ['https://www.googleapis.com/auth/androidpublisher'],
+  }
+  if (cfg.googlePlayServiceAccountJson) {
+    try {
+      options.credentials = JSON.parse(cfg.googlePlayServiceAccountJson)
+    } catch {
+      throw new AppError(500, 'GOOGLE_PLAY_SERVICE_ACCOUNT_JSON is not valid JSON.')
+    }
+  } else {
+    options.keyFile = cfg.googlePlayServiceAccountFile
+  }
+  return new GoogleAuth(options)
+}
+
+async function verifyGooglePlayProductPurchase(productId: string, purchaseToken: string) {
+  const auth = googlePlayAuth()
+  const client = await auth.getClient()
+  const headers = await client.getRequestHeaders()
+  const packageName = encodeURIComponent(cfg.googlePlayPackageName)
+  const encodedProductId = encodeURIComponent(productId)
+  const encodedToken = encodeURIComponent(purchaseToken)
+  const url = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/purchases/products/${encodedProductId}/tokens/${encodedToken}`
+
+  const response = await fetch(url, { headers: headers as any })
+  const data = await response.json().catch(() => null) as any
+  if (!response.ok) {
+    const message = String(data?.error?.message || '')
+    if (/android publisher api|android developer api|androidpublisher/i.test(message) && /disabled|not been used/i.test(message)) {
+      throw new AppError(502, 'Google Play purchase was accepted, but backend verification is not ready yet. Enable the Google Play Android Developer API for the service account project, wait a few minutes, then reopen Top up to finish adding the credits.')
+    }
+    throw new AppError(502, message || 'Could not verify Google Play purchase.')
+  }
+  if (data?.purchaseState !== 0) throw new AppError(409, 'Google Play purchase is not completed yet.')
+  return data
+}
+
+router.get('/packages', (_req: Request, res: Response) => {
+  res.json({ packages: PACKAGES.map(pkg => ({ ...pkg, googlePlayProductId: googlePlayProductId(pkg.id) })) })
 })
 
 router.get('/history', requireAuth, async (req: AuthRequest, res: Response, next) => {
@@ -183,6 +238,38 @@ router.post('/checkout', requireAuth, async (req: AuthRequest, res: Response, ne
     })
 
     res.json({ url: session.url })
+  } catch (err) { next(err) }
+})
+
+router.post('/play/fulfill', requireAuth, async (req: AuthRequest, res: Response, next) => {
+  try {
+    const productId = String(req.body.productId || '')
+    const purchaseToken = String(req.body.purchaseToken || '')
+    if (!productId || !purchaseToken) throw new AppError(400, 'productId and purchaseToken are required.')
+
+    const pkg = packageForGooglePlayProduct(productId)
+    if (!pkg) throw new AppError(400, 'Unknown Google Play product.')
+
+    const purchase = await verifyGooglePlayProductPurchase(productId, purchaseToken)
+    const credits = await fulfillCreditPurchase({
+      userId: req.user!.userId,
+      packageId: pkg.id,
+      credits: pkg.credits,
+      paymentId: `play:${purchaseToken}`,
+      provider: 'google_play',
+    })
+
+    const user = await prisma.user.findUnique({
+      where: { id: req.user!.userId },
+      select: { id: true, email: true, credits: true, massaAddress: true },
+    })
+
+    res.json({
+      ok: true,
+      credits,
+      user,
+      orderId: purchase.orderId || null,
+    })
   } catch (err) { next(err) }
 })
 

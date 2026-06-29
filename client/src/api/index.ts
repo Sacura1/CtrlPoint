@@ -79,6 +79,7 @@ export type ArcWeb3Category =
   | 'games'
   | 'eligibility'
   | 'dashboards'
+  | 'custom'
 export interface ModelOption {
   id: string
   label: string
@@ -95,9 +96,53 @@ export interface ReasoningEffortOption {
   sub: string
 }
 
+export interface AgentAnalytics {
+  generatedAt: string
+  proofContract: string | null
+  explorerUrl: string
+  stats: {
+    totalDeployments: number
+    sampledDeployments: number
+    delivered: number
+    failed: number
+    processing: number
+    volumeUsd: number
+    proofCount: number
+    averageDeploySeconds: number | null
+  }
+  daily: Array<{ date: string; deployments: number; delivered: number; volumeUsd: number }>
+  topPayers: Array<{ payer: string; label: string; deployments: number; volumeUsd: number }>
+  recent: Array<{
+    id: string
+    deploymentId: string | null
+    status: 'delivered' | 'failed' | 'processing' | 'superseded'
+    source: string
+    payer: string | null
+    payerLabel: string
+    network: string | null
+    amount: string | null
+    paymentTx: string | null
+    paymentExplorerUrl: string | null
+    proofTx: string | null
+    proofExplorerUrl: string | null
+    proofContract: string | null
+    proofError: string | null
+    mnsName: string | null
+    title: string
+    url: string | null
+    artifactAddress: string | null
+    createdAt: string
+    updatedAt: string
+  }>
+}
+
 // Auth
 export const appConfig = {
   get: () => request<{ enableModelSelection: boolean; activeModel: string; models: ModelOption[]; reasoningEfforts: { openai: ReasoningEffortOption[]; anthropic: ReasoningEffortOption[] } }>('/config'),
+}
+
+export const publicAgentAnalytics = {
+  get: () => request<AgentAnalytics>('/agent/analytics'),
 }
 
 export const auth = {
@@ -141,12 +186,20 @@ export const sites = {
 }
 
 export const arcDapps = {
-  list: () => request<{ dapps: ArcDapp[] }>('/arc-dapps'),
-  getForSite: (siteId: string) => request<{ dapp: ArcDapp | null }>(`/arc-dapps/site/${siteId}`),
-  markSite: (siteId: string, category: ArcWeb3Category) =>
-    request<{ dapp: ArcDapp }>(`/arc-dapps/site/${siteId}`, { method: 'POST', body: JSON.stringify({ category }) }),
-  deployContract: (dappId: string, ownerAddress: string, template?: string) =>
-    request<{ dapp: ArcDapp }>(`/arc-dapps/${dappId}/deploy-contract`, { method: 'POST', body: JSON.stringify({ ownerAddress, template }) }),
+  list: () => request<{ dapps: ArcDapp[] }>('/arc'),
+  getForSite: (siteId: string) => request<{ dapp: ArcDapp | null }>(`/arc/site/${siteId}`),
+  create: (data: { prompt: string; category: ArcWeb3Category; model?: string; reasoningEffort?: string }) =>
+    request<{ dapp: ArcDapp; credits?: number }>('/arc', { method: 'POST', body: JSON.stringify(data) }),
+  get: (dappId: string) => request<{ dapp: ArcDapp }>(`/arc/${dappId}`),
+  rebuild: (dappId: string, data: { prompt: string; model?: string; reasoningEffort?: string }) =>
+    request<{ dapp: ArcDapp; credits?: number }>(`/arc/${dappId}/rebuild`, { method: 'POST', body: JSON.stringify(data) }),
+  updateName: (dappId: string, mnsName: string) =>
+    request<{ dapp: ArcDapp }>(`/arc/${dappId}/site`, { method: 'PATCH', body: JSON.stringify({ mnsName }) }),
+  ownerNonce: (dappId: string, ownerAddress: string) =>
+    request<{ message: string }>(`/arc/${dappId}/owner-nonce`, { method: 'POST', body: JSON.stringify({ ownerAddress }) }),
+  deployContract: (dappId: string, ownerAddress: string, signature = '') =>
+    request<{ dapp: ArcDapp }>(`/arc/${dappId}/deploy-contract`, { method: 'POST', body: JSON.stringify({ ownerAddress, signature }) }),
+  remove: (dappId: string) => request<{ ok: boolean }>(`/arc/${dappId}`, { method: 'DELETE' }),
 }
 
 export const customDomains = {

@@ -1,15 +1,19 @@
-import { PrismaClient } from '@prisma/client'
+import prisma from '../lib/prisma'
 import { uploadSite } from './massa'
 import { registerMns } from './mns'
 import { deployGitHubSite } from './githubDeploy'
 import { cfg } from '../config'
 import { refundMnsRegistrationCreditsForDeployment } from './credits'
+import { notifyDeploymentComplete } from './pushNotifications'
+import { recordAgentDeploymentProof } from './agentDeploymentLedger'
 
-const prisma = new PrismaClient()
 const ACTIVE_STATUSES = ['BUILDING', 'UPLOADING', 'MNS_REGISTERING']
 const STUCK_AFTER_MS = 45 * 60 * 1000
 
 let started = false
+let tickRunning = false
+let wakeTimer: NodeJS.Timeout | null = null
+let lastStuckCleanupAt = 0
 let activeStatic = 0
 let activeFramework = 0
 
@@ -20,12 +24,12 @@ type DeploymentWithSite = any
 type JobKind = 'static' | 'framework'
 
 function isGitHubSource(source: string | null | undefined): boolean {
-  return source === 'github_new' || source === 'github_push'
+  return source === 'github_new' || source === 'github_push' || source === 'github_rollback'
 }
 
 function jobKind(deployment: DeploymentWithSite): JobKind {
   if (!isGitHubSource(deployment.source)) return 'static'
-  return deployment.site?.githubConnection?.projectType === 'framework' ? 'framework' : 'static'
+  return (deployment.projectType || deployment.site?.githubConnection?.projectType) === 'framework' ? 'framework' : 'static'
 }
 
 function hasCapacity(kind: JobKind): boolean {
@@ -116,6 +120,10 @@ async function processManualDeployment(deployment: DeploymentWithSite) {
     })
   }
 
+  await prisma.deployment.updateMany({
+    where: { siteId: site.id, id: { not: deployment.id }, status: 'COMPLETE' },
+    data: { status: 'SUPERSEDED', step: 'Superseded by a newer deployment.', updatedAt: new Date() },
+  })
   await updateDeployment(deployment.id, { status: 'COMPLETE', scAddress, step: 'Live!' })
   await prisma.site.update({
     where: { id: site.id },
@@ -131,6 +139,11 @@ async function processGitHubDeployment(deployment: DeploymentWithSite) {
   const sha = deployment.commitSha || 'initial'
   await deployGitHubSite({
     ...connection,
+    projectType: deployment.projectType || connection.projectType,
+    projectRoot: deployment.projectRoot ?? connection.projectRoot,
+    buildCommand: deployment.buildCommand || connection.buildCommand,
+    outputDir: deployment.outputDir || connection.outputDir,
+    buildEnv: deployment.buildEnv ?? connection.buildEnv,
     site: deployment.site,
     user: deployment.site.user,
   }, sha, deployment.id)
@@ -141,8 +154,22 @@ async function processDeployment(deployment: DeploymentWithSite) {
     if (deployment.site?.ownershipClaimed) {
       throw new Error('Ownership has been claimed for this site. CtrlPoint updates are disabled.')
     }
+    const isUpdate = deployment.type === 'UPDATE' || !!deployment.site?.scAddress
     if (isGitHubSource(deployment.source)) await processGitHubDeployment(deployment)
     else await processManualDeployment(deployment)
+    if (deployment.source === 'agent_x402' || deployment.source === 'agent_x402_framework') {
+      await recordAgentDeploymentProof(deployment.id)
+        .catch(err => console.error(`[agent-ledger:${deployment.id.slice(0, 8)}] proof write failed:`, err?.message || err))
+    }
+    if (deployment.site?.userId) {
+      await notifyDeploymentComplete(
+        deployment.site.userId,
+        deployment.site.id,
+        deployment.site.title,
+        `https://${deployment.site.mnsName}.${cfg.mnsPublicDomain}`,
+        isUpdate,
+      ).catch(err => console.error(`[push:${deployment.id.slice(0, 8)}] deployment notification failed:`, err))
+    }
   } catch (err: any) {
     const errorMsg = err?.message || 'Unknown deployment error'
     log(deployment.id, `Failed: ${errorMsg}`)
@@ -159,8 +186,29 @@ async function processDeployment(deployment: DeploymentWithSite) {
   }
 }
 
+function scheduleTick(delayMs: number) {
+  if (!started || !cfg.enableDeployWorker) return
+  if (wakeTimer) clearTimeout(wakeTimer)
+  wakeTimer = setTimeout(() => {
+    wakeTimer = null
+    tick().catch(err => console.error('[worker] tick failed:', err))
+  }, Math.max(0, delayMs))
+}
+
+export function wakeDeployWorker() {
+  scheduleTick(0)
+}
+
 async function tick() {
-  await failStuckDeployments().catch(err => console.error('[worker] stuck cleanup failed:', err))
+  if (tickRunning) return
+  tickRunning = true
+  let startedJobs = 0
+  let queuedCount = 0
+  try {
+  if (Date.now() - lastStuckCleanupAt > Math.max(60_000, cfg.deployWorkerIdlePollMs)) {
+    lastStuckCleanupAt = Date.now()
+    await failStuckDeployments().catch(err => console.error('[worker] stuck cleanup failed:', err))
+  }
 
   const queued = await prisma.deployment.findMany({
     where: { status: 'QUEUED' },
@@ -175,6 +223,7 @@ async function tick() {
       },
     },
   })
+  queuedCount = queued.length
 
   for (const deployment of queued) {
     const kind = jobKind(deployment)
@@ -192,16 +241,27 @@ async function tick() {
     if (claimed.count !== 1) continue
 
     inc(kind)
+    startedJobs += 1
     processDeployment(deployment)
       .catch(err => console.error(`[worker:${deployment.id.slice(0, 8)}]`, err))
-      .finally(() => dec(kind))
+      .finally(() => {
+        dec(kind)
+        scheduleTick(0)
+      })
+  }
+  } finally {
+    tickRunning = false
+    const activeJobs = activeStatic + activeFramework
+    const likelyMoreQueued = queuedCount > startedJobs
+    scheduleTick(activeJobs > 0 || likelyMoreQueued ? cfg.deployWorkerPollMs : cfg.deployWorkerIdlePollMs)
   }
 }
 
 export function startDeployWorker() {
   if (started || !cfg.enableDeployWorker) return
   started = true
-  console.log(`[worker] deploy worker started: static=${cfg.deployWorkerStaticConcurrency}, framework=${cfg.deployWorkerFrameworkConcurrency}`)
-  tick().catch(err => console.error('[worker] tick failed:', err))
-  setInterval(() => tick().catch(err => console.error('[worker] tick failed:', err)), cfg.deployWorkerPollMs)
+  console.log(`[worker] deploy worker started: static=${cfg.deployWorkerStaticConcurrency}, framework=${cfg.deployWorkerFrameworkConcurrency}, idlePollMs=${cfg.deployWorkerIdlePollMs}`)
+  // Recover queued work on boot. New deployment requests wake this worker
+  // directly, so the idle safety poll does not keep serverless Postgres awake.
+  scheduleTick(1000)
 }

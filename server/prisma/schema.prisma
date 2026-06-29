@@ -27,12 +27,48 @@ model User {
   agentRequests   AgentRequest[]
   githubConnections GitHubConnection[]
   githubInstallations GitHubInstallation[]
+  loginEvents      UserLoginEvent[]
+  supportTickets   SupportTicket[]
+  arcDapps         ArcDapp[]
+  authOtps         AuthOtp[]
+  pushTokens       PushToken[]
+}
+
+model PushToken {
+  id             String    @id @default(cuid())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token          String    @unique
+  platform       String?
+  lastReminderAt DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([lastReminderAt])
+}
+
+model AuthOtp {
+  id         String    @id @default(cuid())
+  userId     String?
+  user       User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  email      String
+  purpose    String
+  codeHash   String
+  attempts   Int       @default(0)
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([email, purpose])
+  @@index([expiresAt])
 }
 
 model Site {
   id            String     @id @default(cuid())
   userId        String
   user          User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind          String     @default("WEBSITE")
   mnsName       String     @unique
   scAddress     String?
   status        String     @default("DRAFT")
@@ -50,6 +86,47 @@ model Site {
 
   deployments       Deployment[]
   githubConnection  GitHubConnection?
+  customDomains     CustomDomain[]
+  arcDapp           ArcDapp?
+
+  @@index([userId, kind])
+}
+
+model ArcDapp {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  siteId          String   @unique
+  site            Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  category        String
+  status          String   @default("QUEUED")
+  prompt          String
+  model           String?
+  reasoningEffort String?
+  reservedCredits Int      @default(0)
+  usesUserKey     Boolean  @default(false)
+  buildStep       String?
+  progress        Int      @default(0)
+  ownerAddress    String?
+  ownerNonce      String?
+  contractAddress String?
+  deployTxHash    String?
+  explorerUrl     String?
+  abiJson         String?
+  sourceCode      String?
+  contractName    String?
+  contractSummary String?
+  compilerVersion String?
+  template        String?
+  errorMsg        String?
+  buildStartedAt  DateTime?
+  buildFinishedAt DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([userId])
+  @@index([category])
+  @@index([status])
 }
 
 model Deployment {
@@ -60,11 +137,35 @@ model Deployment {
   status    String   @default("QUEUED")
   source    String   @default("agent")
   commitSha String?
+  projectType String?
+  projectRoot String?
+  buildCommand String?
+  outputDir String?
+  buildEnv String?
+  buildLog String?
   step      String?
   errorMsg  String?
   scAddress String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model CustomDomain {
+  id                String   @id @default(cuid())
+  siteId            String
+  site              Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  domain            String   @unique
+  status            String   @default("PENDING")
+  verificationToken String
+  creditCost        Int      @default(0)
+  becameActiveAt    DateTime?
+  lastCheckedAt     DateTime?
+  errorMsg          String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([siteId])
+  @@index([status])
 }
 
 model CreditTransaction {
@@ -93,6 +194,7 @@ model GitHubConnection {
   buildCommand     String   @default("npm run build")
   outputDir        String   @default("dist")
   buildEnv         String?
+  autoDeployOnPush Boolean  @default(true)
   lastDeployedSha  String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
@@ -153,10 +255,56 @@ model AgentRequest {
   paymentNetwork String?
   paymentAmount  String?
   paymentTx      String?
+  agentProofTxHash String?
+  agentProofContract String?
+  agentProofError String?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
   @@unique([userId, idempotencyKey])
   @@index([deploymentId])
   @@index([paymentPayer, paymentNetwork])
+}
+
+model UserLoginEvent {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  method    String
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([createdAt])
+  @@index([method])
+}
+
+model SupportTicket {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  email     String
+  title     String
+  body      String
+  status    String   @default("OPEN")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model ServerErrorLog {
+  id        String   @id @default(cuid())
+  message   String
+  stack     String?
+  path      String?
+  method    String?
+  userId    String?
+  statusCode Int?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([statusCode])
+  @@index([path])
 }

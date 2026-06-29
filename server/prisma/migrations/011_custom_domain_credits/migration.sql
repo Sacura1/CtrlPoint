@@ -1,0 +1,3 @@
+ALTER TABLE "CustomDomain"
+ADD COLUMN "creditCost" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN "becameActiveAt" TIMESTAMP(3);

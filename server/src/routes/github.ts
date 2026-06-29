@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express'
-import { PrismaClient } from '@prisma/client'
+import prisma from '../lib/prisma'
 import { requireAuth } from '../middleware/auth'
 import { AppError } from '../middleware/errorHandler'
 import { AuthPayload, AuthRequest } from '../types'
@@ -8,11 +8,27 @@ import { cfg } from '../config'
 import { encrypt, decrypt } from '../utils/encryption'
 import { applyDailyFreeCredits } from '../services/credits'
 import { checkMnsAvailable, mnsRegistrationCreditCost, validateMnsName } from '../services/mns'
+import { wakeDeployWorker } from '../services/deployWorker'
 import crypto from 'crypto'
 import jwt from 'jsonwebtoken'
 
 const router = Router()
-const prisma = new PrismaClient()
+
+function githubDeploymentSnapshot(config: {
+  projectType?: string | null
+  projectRoot?: string | null
+  buildCommand?: string | null
+  outputDir?: string | null
+  buildEnv?: string | null
+}) {
+  return {
+    projectType: config.projectType || 'static',
+    projectRoot: config.projectRoot || '',
+    buildCommand: config.buildCommand || 'npm run build',
+    outputDir: config.outputDir || 'dist',
+    buildEnv: config.buildEnv || null,
+  }
+}
 
 function authErrorRedirect(res: Response, message: string) {
   const params = new URLSearchParams({ error: message })
@@ -136,6 +152,12 @@ async function resolveRepoInstallation(
   }
 
   throw new AppError(403, 'That repository is not available to the installed GitHub App. Reinstall the app and select this repository.')
+}
+
+async function getBranchSha(repoOwner: string, repoName: string, branch: string, installationId: string): Promise<string | undefined> {
+  const token = await createInstallationToken(installationId)
+  const ref = await githubFetch(`https://api.github.com/repos/${repoOwner}/${repoName}/git/ref/heads/${branch}`, token) as any
+  return ref.object?.sha
 }
 
 function encryptToken(token: string) {
@@ -305,6 +327,7 @@ router.get('/connection/:siteId', requireAuth, async (req: AuthRequest, res: Res
         buildCommand: true,
         outputDir: true,
         buildEnv: true,
+        autoDeployOnPush: true,
         lastDeployedSha: true,
       },
     })
@@ -405,6 +428,7 @@ router.post('/deploy-new', requireAuth, async (req: AuthRequest, res: Response, 
           status: 'QUEUED',
           source: 'github_new',
           commitSha: sha !== 'initial' ? sha : undefined,
+          ...githubDeploymentSnapshot({ projectType, projectRoot, buildCommand, outputDir, buildEnv }),
           step: 'Queued',
         },
       })
@@ -423,13 +447,14 @@ router.post('/deploy-new', requireAuth, async (req: AuthRequest, res: Response, 
       return { site, deployment }
     })
 
+    wakeDeployWorker()
     res.json({ siteId: result.site.id, mnsName, deploymentId: result.deployment.id, creditsCharged: mnsCreditCost })
   } catch (err) { next(err) }
 })
 
 router.post('/connect', requireAuth, async (req: AuthRequest, res: Response, next) => {
   try {
-    const { siteId, repoOwner, repoName, branch, projectType, projectRoot, buildCommand, outputDir, buildEnv, githubInstallationId } = req.body
+    const { siteId, repoOwner, repoName, branch, projectType, projectRoot, buildCommand, outputDir, buildEnv, githubInstallationId, autoDeployOnPush } = req.body
 
     if (!siteId || !repoOwner || !repoName) throw new AppError(400, 'siteId, repoOwner, repoName are required.')
 
@@ -457,6 +482,7 @@ router.post('/connect', requireAuth, async (req: AuthRequest, res: Response, nex
         buildCommand: buildCommand || 'npm run build',
         outputDir: outputDir || 'dist',
         buildEnv: buildEnv || null,
+        autoDeployOnPush: typeof autoDeployOnPush === 'boolean' ? autoDeployOnPush : true,
       },
       update: {
         githubInstallationId: installationId,
@@ -468,6 +494,7 @@ router.post('/connect', requireAuth, async (req: AuthRequest, res: Response, nex
         buildCommand: buildCommand || 'npm run build',
         outputDir: outputDir || 'dist',
         buildEnv: buildEnv || null,
+        ...(typeof autoDeployOnPush === 'boolean' ? { autoDeployOnPush } : {}),
       },
     })
 
@@ -514,17 +541,87 @@ router.post('/redeploy/:siteId', requireAuth, async (req: AuthRequest, res: Resp
       data: { status: connection.site.scAddress ? 'UPDATING' : 'DEPLOYING' },
     })
 
+    let sha: string | undefined
+    try {
+      sha = await getBranchSha(connection.repoOwner, connection.repoName, connection.branch, connection.githubInstallationId || '')
+    } catch {}
+
     const deployment = await prisma.deployment.create({
       data: {
         siteId,
         type: connection.site.scAddress ? 'UPDATE' : 'INITIAL',
         status: 'QUEUED',
         source: connection.site.scAddress ? 'github_push' : 'github_new',
+        commitSha: sha,
+        ...githubDeploymentSnapshot(connection),
         step: 'Queued manual GitHub redeploy.',
       },
     })
 
+    wakeDeployWorker()
     res.json({ deploymentId: deployment.id })
+  } catch (err) { next(err) }
+})
+
+router.post('/rollback/:deploymentId', requireAuth, async (req: AuthRequest, res: Response, next) => {
+  try {
+    const { deploymentId } = req.params as { deploymentId: string }
+    const target = await prisma.deployment.findUnique({
+      where: { id: deploymentId },
+      include: {
+        site: {
+          include: { githubConnection: true },
+        },
+      },
+    })
+    if (!target) throw new AppError(404, 'Deployment not found.')
+    if (target.site.userId !== req.user!.userId) throw new AppError(403, 'Access denied.')
+    if (!target.site.githubConnection) throw new AppError(404, 'No GitHub connection found for this site.')
+    if (target.site.ownershipClaimed) {
+      throw new AppError(409, 'This site has claimed ownership. GitHub rollback cannot update it.')
+    }
+    if (!target.commitSha) throw new AppError(400, 'This deployment does not have a commit to roll back to.')
+    if (!['COMPLETE', 'SUPERSEDED'].includes(target.status)) {
+      throw new AppError(400, 'Only successful GitHub deployments can be rolled back.')
+    }
+    if (!['github_new', 'github_push', 'github_rollback'].includes(target.source)) {
+      throw new AppError(400, 'Only GitHub deployments can be rolled back.')
+    }
+
+    const active = await prisma.deployment.findFirst({
+      where: {
+        siteId: target.siteId,
+        status: { in: ['QUEUED', 'BUILDING', 'UPLOADING', 'MNS_REGISTERING'] },
+      },
+      select: { id: true },
+    })
+    if (active) throw new AppError(409, 'A deployment is already running for this site.')
+
+    await prisma.site.update({
+      where: { id: target.siteId },
+      data: { status: target.site.scAddress ? 'UPDATING' : 'DEPLOYING' },
+    })
+
+    const rollback = await prisma.deployment.create({
+      data: {
+        siteId: target.siteId,
+        type: 'ROLLBACK',
+        status: 'QUEUED',
+        source: 'github_rollback',
+        commitSha: target.commitSha,
+        ...githubDeploymentSnapshot({
+          projectType: target.projectType || target.site.githubConnection.projectType,
+          projectRoot: target.projectRoot ?? target.site.githubConnection.projectRoot,
+          buildCommand: target.buildCommand || target.site.githubConnection.buildCommand,
+          outputDir: target.outputDir || target.site.githubConnection.outputDir,
+          buildEnv: target.buildEnv ?? target.site.githubConnection.buildEnv,
+        }),
+        step: `Queued rollback to ${target.commitSha.slice(0, 7)}.`,
+      },
+    })
+
+    wakeDeployWorker()
+    res.json({ deploymentId: rollback.id })
   } catch (err) { next(err) }
 })
 
@@ -580,6 +677,11 @@ router.post('/webhook', async (req: Request, res: Response, next) => {
       res.status(200).json({ ok: true, skipped: 'ownership_claimed' })
       return
     }
+    if (!connection.autoDeployOnPush) {
+      console.info('[github:webhook] skipped auto-deploy off', { siteId: connection.siteId })
+      res.status(200).json({ ok: true, skipped: 'auto_deploy_off' })
+      return
+    }
 
     const active = await prisma.deployment.findFirst({
       where: {
@@ -600,16 +702,19 @@ router.post('/webhook', async (req: Request, res: Response, next) => {
             status: 'QUEUED',
             source: connection.site.scAddress ? 'github_push' : 'github_new',
             commitSha: sha,
+            ...githubDeploymentSnapshot(connection),
             step: 'Queued GitHub push.',
           },
         })
+        wakeDeployWorker()
         res.status(200).json({ ok: true, queued: true })
         return
       }
       await prisma.deployment.update({
         where: { id: active.id },
-        data: { commitSha: sha, step: 'Queued latest GitHub push.', updatedAt: new Date() },
+        data: { commitSha: sha, ...githubDeploymentSnapshot(connection), step: 'Queued latest GitHub push.', updatedAt: new Date() },
       }).catch(() => {})
+      wakeDeployWorker()
       res.status(200).json({ ok: true, queued: true, coalesced: true })
       return
     }
@@ -626,10 +731,12 @@ router.post('/webhook', async (req: Request, res: Response, next) => {
         status: 'QUEUED',
         source: connection.site.scAddress ? 'github_push' : 'github_new',
         commitSha: sha,
+        ...githubDeploymentSnapshot(connection),
         step: 'Queued GitHub push.',
       },
     })
 
+    wakeDeployWorker()
     console.info('[github:webhook] queued deployment', { siteId: connection.siteId, sha })
     res.status(200).json({ ok: true, queued: true })
   } catch (err) { next(err) }

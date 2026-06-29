@@ -1,5 +1,5 @@
 import { Router, Response } from 'express'
-import { PrismaClient } from '@prisma/client'
+import prisma from '../lib/prisma'
 import { v4 as uuidv4 } from 'uuid'
 import { requireAuth } from '../middleware/auth'
 import { AppError } from '../middleware/errorHandler'
@@ -7,10 +7,34 @@ import { AuthRequest } from '../types'
 import { checkMnsAvailable, mnsRegistrationCreditCost, mnsRegistrationMessage } from '../services/mns'
 import { applyDailyFreeCredits } from '../services/credits'
 import { cfg } from '../config'
+import { wakeDeployWorker } from '../services/deployWorker'
+import { injectArcContractConfig } from '../services/arcContracts'
 
 const router = Router()
-const prisma = new PrismaClient()
 const mnsUrl = (name: string) => `https://${name}.${cfg.mnsPublicDomain}`
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function isDatabaseConnectionError(err: unknown) {
+  const message = err instanceof Error ? err.message : String(err || '')
+  return /can't reach database|database server|connection|timeout|p1001/i.test(message)
+}
+
+async function withDatabaseRetry<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
+  let lastError: unknown
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      return await fn()
+    } catch (err) {
+      lastError = err
+      if (!isDatabaseConnectionError(err) || attempt === attempts - 1) break
+      await sleep(250 * (attempt + 1))
+    }
+  }
+  throw lastError
+}
 
 // Check if MNS name is available (used before deployment)
 router.get('/check-mns/:name', requireAuth, async (req: AuthRequest, res: Response, next) => {
@@ -41,7 +65,7 @@ router.post('/', requireAuth, async (req: AuthRequest, res: Response, next) => {
     if (!siteId) throw new AppError(400, 'siteId is required.')
 
     // Load site
-    const site = await prisma.site.findUnique({ where: { id: siteId } })
+    let site = await prisma.site.findUnique({ where: { id: siteId }, include: { arcDapp: true } })
     if (!site) throw new AppError(404, 'Site not found.')
     if (site.userId !== req.user!.userId) throw new AppError(403, 'Access denied.')
     if (site.ownershipClaimed) {
@@ -63,6 +87,19 @@ router.post('/', requireAuth, async (req: AuthRequest, res: Response, next) => {
       if (activeDeployment) await prisma.deployment.update({ where: { id: activeDeployment.id }, data: { status: 'FAILED', step: 'Failed — timed out', errorMsg: 'Deployment timed out or was interrupted.' } })
     }
     if (!site.generatedCode) throw new AppError(400, 'Site has no generated code. Generate a site first.')
+    if (site.kind === 'ARC_DAPP' && site.arcDapp) {
+      const refreshedCode = injectArcContractConfig(site.generatedCode, {
+        contractAddress: site.arcDapp.contractAddress,
+        abiJson: site.arcDapp.abiJson,
+        explorerUrl: site.arcDapp.explorerUrl,
+        contractName: site.arcDapp.contractName,
+        ownerAddress: site.arcDapp.ownerAddress,
+      })
+      if (refreshedCode !== site.generatedCode) {
+        const updated = await prisma.site.update({ where: { id: site.id }, data: { generatedCode: refreshedCode } })
+        site = { ...site, ...updated, generatedCode: refreshedCode }
+      }
+    }
 
     const isUpdate = site.status === 'LIVE'
 
@@ -111,7 +148,8 @@ router.post('/', requireAuth, async (req: AuthRequest, res: Response, next) => {
           step: 'Queued',
         },
       })
-    })
+    }, { maxWait: 15_000, timeout: 30_000 })
+    wakeDeployWorker()
 
     res.status(202).json({
       deploymentId,
@@ -126,10 +164,10 @@ router.get('/status/:deploymentId', requireAuth, async (req: AuthRequest, res: R
   try {
     const deploymentId = req.params.deploymentId as string
 
-    const deployment = await prisma.deployment.findUnique({
+    const deployment = await withDatabaseRetry(() => prisma.deployment.findUnique({
       where: { id: deploymentId as string },
       include: { site: { select: { mnsName: true, userId: true } } },
-    })
+    }))
     if (!deployment) throw new AppError(404, 'Deployment not found.')
     if (deployment.site.userId !== req.user!.userId) throw new AppError(403, 'Access denied.')
 
@@ -140,7 +178,13 @@ router.get('/status/:deploymentId', requireAuth, async (req: AuthRequest, res: R
       error: deployment.errorMsg,
       url: deployment.status === 'COMPLETE' ? mnsUrl(deployment.site.mnsName) : null,
     })
-  } catch (err) { next(err) }
+  } catch (err) {
+    if (isDatabaseConnectionError(err)) {
+      next(new AppError(503, 'Deployment status is temporarily unavailable. The app will retry.'))
+      return
+    }
+    next(err)
+  }
 })
 
 export default router

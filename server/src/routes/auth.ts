@@ -1,19 +1,24 @@
 import { Router, Request, Response } from 'express'
 import bcrypt from 'bcrypt'
 import { OAuth2Client } from 'google-auth-library'
-import { PrismaClient } from '@prisma/client'
+import prisma from '../lib/prisma'
 import { signToken, requireAuth } from '../middleware/auth'
 import { AuthRequest } from '../types'
 import { AppError } from '../middleware/errorHandler'
 import { cfg } from '../config'
 import { applyDailyFreeCredits } from '../services/credits'
+import { recordLogin } from '../services/observability'
+import { sendOtpEmail } from '../services/email'
 
 const router = Router()
-const prisma = new PrismaClient()
 const googleClient = new OAuth2Client(cfg.googleClientId)
 
 function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+}
+
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase()
 }
 
 function isValidMassaAddress(address: string): boolean {
@@ -32,6 +37,48 @@ function setCookie(res: Response, token: string) {
 
 function userPayload(user: { id: string; email: string; credits: number; massaAddress: string | null }) {
   return { id: user.id, email: user.email, credits: user.credits, massaAddress: user.massaAddress }
+}
+
+function otpCode(): string {
+  return Math.floor(100000 + Math.random() * 900000).toString()
+}
+
+async function createOtp(email: string, purpose: 'register' | 'reset', userId?: string) {
+  const code = otpCode()
+  const codeHash = await bcrypt.hash(code, 10)
+  await prisma.authOtp.updateMany({
+    where: { email, purpose, consumedAt: null },
+    data: { consumedAt: new Date() },
+  })
+  await prisma.authOtp.create({
+    data: {
+      email,
+      purpose,
+      userId,
+      codeHash,
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+    },
+  })
+  await sendOtpEmail(email, code, purpose)
+  return code
+}
+
+async function verifyOtp(email: string, purpose: 'register' | 'reset', code: string) {
+  const otp = await prisma.authOtp.findFirst({
+    where: { email, purpose, consumedAt: null, expiresAt: { gt: new Date() } },
+    orderBy: { createdAt: 'desc' },
+  })
+  if (!otp) throw new AppError(400, 'Verification code expired. Request a new code.')
+  if (otp.attempts >= 5) throw new AppError(429, 'Too many attempts. Request a new code.')
+
+  const valid = await bcrypt.compare(String(code || '').trim(), otp.codeHash)
+  if (!valid) {
+    await prisma.authOtp.update({ where: { id: otp.id }, data: { attempts: { increment: 1 } } })
+    throw new AppError(400, 'Invalid verification code.')
+  }
+
+  await prisma.authOtp.update({ where: { id: otp.id }, data: { consumedAt: new Date() } })
+  return otp
 }
 
 router.post('/guest', async (_req: Request, res: Response, next) => {
@@ -54,7 +101,33 @@ router.post('/guest', async (_req: Request, res: Response, next) => {
 
     const token = signToken({ userId: user.id, email: user.email })
     setCookie(res, token)
+    await recordLogin(user.id, 'guest')
     res.status(201).json({ user: userPayload(user), token })
+  } catch (err) { next(err) }
+})
+
+router.post('/email/start', async (req: Request, res: Response, next) => {
+  try {
+    const email = normalizeEmail(String(req.body.email || ''))
+    const purpose = String(req.body.purpose || '') as 'register' | 'reset'
+    if (!isValidEmail(email)) throw new AppError(400, 'Enter a valid email address.')
+    if (!['register', 'reset'].includes(purpose)) throw new AppError(400, 'Invalid email verification purpose.')
+
+    const user = await prisma.user.findUnique({ where: { email } })
+    if (purpose === 'register') {
+      if (user) throw new AppError(409, 'An account with this email already exists.')
+      const code = await createOtp(email, 'register')
+      res.json({ ok: true, ...(cfg.nodeEnv === 'production' ? {} : { devCode: code }) })
+      return
+    }
+
+    if (user) {
+      const code = await createOtp(email, 'reset', user.id)
+      res.json({ ok: true, ...(cfg.nodeEnv === 'production' ? {} : { devCode: code }) })
+      return
+    }
+
+    res.json({ ok: true })
   } catch (err) { next(err) }
 })
 
@@ -110,6 +183,7 @@ router.post('/google', async (req: Request, res: Response, next) => {
 
     const token = signToken({ userId: user.id, email: user.email })
     setCookie(res, token)
+    await recordLogin(user.id, 'google')
     res.json({ user: userPayload(user), token })
   } catch (err) { next(err) }
 })
@@ -118,7 +192,8 @@ router.post('/google', async (req: Request, res: Response, next) => {
 
 router.post('/register', async (req: Request, res: Response, next) => {
   try {
-    const { email, password, massaAddress } = req.body
+    const email = normalizeEmail(String(req.body.email || ''))
+    const { password, massaAddress } = req.body
 
     if (!email || !password) throw new AppError(400, 'Email and password are required.')
     if (!isValidEmail(email)) throw new AppError(400, 'Invalid email address.')
@@ -139,13 +214,45 @@ router.post('/register', async (req: Request, res: Response, next) => {
 
     const token = signToken({ userId: user.id, email: user.email })
     setCookie(res, token)
+    await recordLogin(user.id, 'register')
+    res.status(201).json({ user: userPayload(user), token })
+  } catch (err) { next(err) }
+})
+
+router.post('/register/verify', async (req: Request, res: Response, next) => {
+  try {
+    const email = normalizeEmail(String(req.body.email || ''))
+    const { password, code, massaAddress } = req.body
+
+    if (!email || !password || !code) throw new AppError(400, 'Email, password, and verification code are required.')
+    if (!isValidEmail(email)) throw new AppError(400, 'Invalid email address.')
+    if (password.length < 8) throw new AppError(400, 'Password must be at least 8 characters.')
+    if (massaAddress && !isValidMassaAddress(massaAddress))
+      throw new AppError(400, 'Invalid Massa wallet address.')
+
+    const existing = await prisma.user.findUnique({ where: { email } })
+    if (existing) throw new AppError(409, 'An account with this email already exists.')
+
+    await verifyOtp(email, 'register', code)
+    const passwordHash = await bcrypt.hash(password, 12)
+    const user = await prisma.user.create({
+      data: { email, passwordHash, massaAddress: massaAddress || null, dailyCreditsResetAt: new Date() },
+    })
+    await prisma.creditTransaction.create({
+      data: { userId: user.id, amount: 3, type: 'signup_bonus', note: 'Welcome bonus' },
+    })
+
+    const token = signToken({ userId: user.id, email: user.email })
+    setCookie(res, token)
+    await recordLogin(user.id, 'register')
     res.status(201).json({ user: userPayload(user), token })
   } catch (err) { next(err) }
 })
 
 router.post('/login', async (req: Request, res: Response, next) => {
   try {
-    const { email, password } = req.body
+    const email = normalizeEmail(String(req.body.email || ''))
+    const { password } = req.body
     if (!email || !password) throw new AppError(400, 'Email and password are required.')
 
     const user = await prisma.user.findUnique({ where: { email } })
@@ -160,7 +267,29 @@ router.post('/login', async (req: Request, res: Response, next) => {
     const refreshedUser = await applyDailyFreeCredits(prisma, user.id) ?? user
     const token = signToken({ userId: refreshedUser.id, email: refreshedUser.email })
     setCookie(res, token)
+    await recordLogin(refreshedUser.id, 'password')
     res.json({ user: userPayload(refreshedUser), token })
+  } catch (err) { next(err) }
+})
+
+router.post('/password/reset', async (req: Request, res: Response, next) => {
+  try {
+    const email = normalizeEmail(String(req.body.email || ''))
+    const { code, password } = req.body
+    if (!email || !code || !password) throw new AppError(400, 'Email, verification code, and new password are required.')
+    if (!isValidEmail(email)) throw new AppError(400, 'Invalid email address.')
+    if (password.length < 8) throw new AppError(400, 'Password must be at least 8 characters.')
+
+    await verifyOtp(email, 'reset', code)
+    const passwordHash = await bcrypt.hash(password, 12)
+    const user = await prisma.user.findUnique({ where: { email } })
+    if (!user) throw new AppError(400, 'Verification code expired. Request a new code.')
+
+    const updated = await prisma.user.update({ where: { id: user.id }, data: { passwordHash } })
+    const token = signToken({ userId: updated.id, email: updated.email })
+    setCookie(res, token)
+    await recordLogin(updated.id, 'password_reset')
+    res.json({ user: userPayload(updated), token })
   } catch (err) { next(err) }
 })
 
@@ -172,6 +301,30 @@ router.post('/logout', (req: Request, res: Response) => {
     secure: isProduction,
   })
   res.json({ ok: true })
+})
+
+router.delete('/me', requireAuth, async (req: AuthRequest, res: Response, next) => {
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.supportTicket.updateMany({
+        where: { userId: req.user!.userId },
+        data: { userId: null },
+      })
+      await tx.serverErrorLog.updateMany({
+        where: { userId: req.user!.userId },
+        data: { userId: null },
+      })
+      await tx.user.delete({ where: { id: req.user!.userId } })
+    })
+
+    const isProduction = cfg.nodeEnv === 'production'
+    res.clearCookie('token', {
+      httpOnly: true,
+      sameSite: isProduction ? 'none' : 'lax',
+      secure: isProduction,
+    })
+    res.json({ ok: true })
+  } catch (err) { next(err) }
 })
 
 router.get('/me', requireAuth, async (req: AuthRequest, res: Response, next) => {

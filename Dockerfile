@@ -24,6 +24,7 @@ ENV NODE_ENV=production
 COPY --from=server-builder /app/server/node_modules ./server/node_modules
 COPY --from=server-builder /app/server/dist ./server/dist
 COPY --from=server-builder /app/server/prisma ./server/prisma
+COPY --from=server-builder /app/server/contracts ./server/contracts
 COPY --from=server-builder /app/server/package.json ./server/package.json
 COPY --from=client-builder /app/client/dist ./client/dist
 

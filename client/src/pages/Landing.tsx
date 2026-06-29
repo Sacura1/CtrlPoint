@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { useAuth } from '../store/auth'
 import ThemeToggle from '../components/ThemeToggle'
+import PlayStoreButton from '../components/PlayStoreButton'
 
 const API_URL = (import.meta.env.VITE_API_URL || 'https://ctrlpoint-api.fly.dev').replace(/\/+$/, '')
 
@@ -97,6 +98,7 @@ export default function Landing() {
                 <Link to="/agents" className="max-w-[220px] whitespace-normal rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-3.5 text-center text-sm font-bold leading-5 text-[var(--text-soft)] transition hover:bg-white/[0.08] sm:max-w-none sm:px-7">
                   Agent deploy API
                 </Link>
+                <PlayStoreButton className="max-w-[220px] sm:max-w-none" />
               </div>
             </div>
 
@@ -135,6 +137,12 @@ export default function Landing() {
             <p className="mt-3 leading-7 text-[var(--muted)]">
               Agents can discover CtrlPoint through JSON capabilities, pay tiny USDC fees through Circle x402 on Arc, and deploy to Massa DeWeb without creating a CtrlPoint account.
             </p>
+            <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+              <Link to="/agents/analytics" className="inline-flex rounded-xl border border-white/10 px-4 py-2 text-sm font-bold text-[var(--brand-300)] transition hover:bg-white/[0.06]">
+                View public agent analytics
+              </Link>
+              <PlayStoreButton className="w-fit py-2.5" />
+            </div>
           </div>
           <div className="grid gap-3 sm:grid-cols-3">
             <LogoTile src="/circle.svg" lightSrc="/circle_black.svg" alt="Circle" width={118} height={30} />
@@ -148,17 +156,33 @@ export default function Landing() {
         style={{ borderColor: 'var(--line)', color: 'var(--muted-2)' }}>
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-4 sm:flex-row sm:px-6">
           <span>2026 CtrlPoint · Built on Massa & Circle</span>
-          <a
-            href="https://x.com/ctrlpointBuild"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 rounded-xl px-3 py-2 font-semibold transition"
-            style={{ color: 'var(--muted)', border: '1px solid var(--line)', background: 'color-mix(in srgb, var(--panel-2) 58%, transparent)' }}
-            aria-label="Follow CtrlPoint on X"
-          >
-            <XIcon />
-            {/* <span>@ctrlpointBuild</span> */}
-          </a>
+          <div className="flex items-center gap-2">
+            <Link
+              to="/privacy"
+              className="inline-flex items-center rounded-xl px-3 py-2 font-semibold transition"
+              style={{ color: 'var(--muted)', border: '1px solid var(--line)', background: 'color-mix(in srgb, var(--panel-2) 58%, transparent)' }}
+            >
+              Privacy
+            </Link>
+            <Link
+              to="/account-deletion"
+              className="inline-flex items-center rounded-xl px-3 py-2 font-semibold transition"
+              style={{ color: 'var(--muted)', border: '1px solid var(--line)', background: 'color-mix(in srgb, var(--panel-2) 58%, transparent)' }}
+            >
+              Account deletion
+            </Link>
+            <a
+              href="https://x.com/ctrlpointBuild"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 rounded-xl px-3 py-2 font-semibold transition"
+              style={{ color: 'var(--muted)', border: '1px solid var(--line)', background: 'color-mix(in srgb, var(--panel-2) 58%, transparent)' }}
+              aria-label="Follow CtrlPoint on X"
+            >
+              <XIcon />
+              {/* <span>@ctrlpointBuild</span> */}
+            </a>
+          </div>
         </div>
       </footer>
     </div>

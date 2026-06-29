@@ -1,23 +1,34 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 interface PreviewProps {
   html: string
   generating?: boolean
+  loading?: boolean
   className?: string
+  instant?: boolean
+  publicUrl?: string
 }
 
-export default function Preview({ html, generating = false, className = '' }: PreviewProps) {
-  const [visible, setVisible] = useState(false)
+function withPreviewContext(html: string, publicUrl?: string) {
+  if (!html) return html
+  const context = `<script id="ctrlpoint-preview-context">
+window.CTRLPOINT_IS_PREVIEW=true;
+window.CTRLPOINT_PUBLIC_URL=${JSON.stringify(publicUrl || null)};
+</script>`
+  return /<head[\s>]/i.test(html)
+    ? html.replace(/<head([^>]*)>/i, `<head$1>${context}`)
+    : `${context}${html}`
+}
+
+export default function Preview({ html, generating = false, loading = false, className = '', instant = false, publicUrl }: PreviewProps) {
+  const [frameReady, setFrameReady] = useState(false)
+  const previewHtml = useMemo(() => withPreviewContext(html, publicUrl), [html, publicUrl])
 
   useEffect(() => {
-    if (html && !generating) {
-      // Small delay to allow iframe to mount before fading in
-      const t = setTimeout(() => setVisible(true), 80)
-      return () => clearTimeout(t)
-    } else {
-      setVisible(false)
-    }
-  }, [html, generating])
+    setFrameReady(false)
+  }, [previewHtml])
+
+  const waitingForPreview = loading || Boolean(html && !generating && !frameReady)
 
   return (
     <div className={`flex flex-col rounded-2xl overflow-hidden ${className}`}
@@ -34,7 +45,7 @@ export default function Preview({ html, generating = false, className = '' }: Pr
         <div className="flex-1 rounded-lg px-3 py-1 mx-1"
           style={{ background: 'color-mix(in srgb, var(--panel-2) 70%, transparent)' }}>
           <span className="text-xs font-mono" style={{ color: 'var(--muted-2)' }}>
-            {html && !generating ? 'preview' : generating ? 'building…' : 'preview'}
+            {generating ? 'building...' : waitingForPreview ? 'loading preview...' : 'preview'}
           </span>
         </div>
       </div>
@@ -43,7 +54,7 @@ export default function Preview({ html, generating = false, className = '' }: Pr
       <div className="flex-1 relative min-h-0">
 
         {/* Empty state */}
-        {!html && !generating && (
+        {!html && !generating && !loading && (
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="text-center select-none px-6">
               <div className="w-14 h-14 mx-auto mb-5 rounded-3xl flex items-center justify-center"
@@ -55,6 +66,21 @@ export default function Preview({ html, generating = false, className = '' }: Pr
               </div>
               <p className="text-sm font-medium" style={{ color: 'var(--muted-2)' }}>Preview will appear here</p>
               <p className="text-xs mt-1" style={{ color: 'var(--muted-2)' }}>Describe your site to get started</p>
+            </div>
+          </div>
+        )}
+
+        {waitingForPreview && !generating && (
+          <div className="absolute inset-0 z-10 p-5 sm:p-7" style={{ background: 'var(--panel)' }}>
+            <div className="mx-auto max-w-3xl">
+              <div className="skeleton h-5 w-24 rounded-md" />
+              <div className="skeleton mt-8 h-11 w-3/4 max-w-md rounded-lg" />
+              <div className="skeleton mt-3 h-4 w-full max-w-xl rounded-md" />
+              <div className="skeleton mt-2 h-4 w-5/6 max-w-lg rounded-md" />
+              <div className="mt-9 grid sm:grid-cols-3 gap-3">
+                {[0, 1, 2].map(item => <div key={item} className="skeleton h-28 rounded-xl" />)}
+              </div>
+              <div className="skeleton mt-6 h-40 rounded-xl" />
             </div>
           </div>
         )}
@@ -117,10 +143,11 @@ export default function Preview({ html, generating = false, className = '' }: Pr
         {/* iframe */}
         {html && (
           <iframe
-            key={html.length}
-            srcDoc={html}
+            key={`${html.length}:${publicUrl || 'draft'}`}
+            srcDoc={previewHtml}
             sandbox="allow-scripts allow-same-origin"
             title="Site Preview"
+            onLoad={() => setFrameReady(true)}
             style={{
               position: 'absolute',
               inset: 0,
@@ -128,8 +155,8 @@ export default function Preview({ html, generating = false, className = '' }: Pr
               height: '100%',
               border: 'none',
               background: '#fff',
-              opacity: visible ? 1 : 0,
-              transition: 'opacity 0.4s ease',
+              opacity: frameReady && !loading ? 1 : 0,
+              transition: instant ? 'none' : 'opacity 0.4s ease',
             }}
           />
         )}

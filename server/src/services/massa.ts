@@ -1,14 +1,30 @@
 import { spawn } from 'child_process'
 import fs from 'fs/promises'
+import fsSync from 'fs'
 import path from 'path'
 import os from 'os'
 import { cfg } from '../config'
 
 const DEWEB_CLI = path.resolve(__dirname, '../../node_modules/@massalabs/deweb-cli/bin/index.js')
+const MASSA_OPERATION_PATCH_CANDIDATES = [
+  path.resolve(__dirname, './massaOperationPatch.js'),
+  path.resolve(process.cwd(), 'src/services/massaOperationPatch.js'),
+]
+const MASSA_OPERATION_PATCH = MASSA_OPERATION_PATCH_CANDIDATES.find(candidate => fsSync.existsSync(candidate))
 const NODE_URL = cfg.massaNodeUrl
 
 export interface UploadResult {
   scAddress: string
+}
+
+const MASSA_BADGE_HIDER_MARKER = 'ctrlpoint-massa-badge-hider'
+const MASSA_BADGE_HIDER = `<style id="${MASSA_BADGE_HIDER_MARKER}">#massaBox{display:none!important}</style><script id="${MASSA_BADGE_HIDER_MARKER}-script">try{localStorage.setItem("massaBoxClosed","true")}catch(e){}document.addEventListener("DOMContentLoaded",function(){var e=document.getElementById("massaBox");if(e)e.style.display="none"})</script>`
+
+function hideMassaBadge(html: string): string {
+  if (!html || html.includes(MASSA_BADGE_HIDER_MARKER)) return html
+  if (/<\/head>/i.test(html)) return html.replace(/<\/head>/i, `${MASSA_BADGE_HIDER}</head>`)
+  if (/<html[^>]*>/i.test(html)) return html.replace(/<html[^>]*>/i, match => `${match}<head>${MASSA_BADGE_HIDER}</head>`)
+  return `${MASSA_BADGE_HIDER}${html}`
 }
 
 function runDewebCli(args: string[], env: NodeJS.ProcessEnv): Promise<string> {
@@ -16,7 +32,13 @@ function runDewebCli(args: string[], env: NodeJS.ProcessEnv): Promise<string> {
     console.log(`[deweb-cli] node ${DEWEB_CLI} ${args.join(' ')}`)
 
     const proc = spawn('node', [DEWEB_CLI, '--accept_disclaimer', ...args], {
-      env: { ...process.env, ...env },
+      env: {
+        ...process.env,
+        MASSA_OPERATION_WAIT_TIMEOUT_MS: process.env.MASSA_OPERATION_WAIT_TIMEOUT_MS || '300000',
+        MASSA_OPERATION_WAIT_PERIOD_MS: process.env.MASSA_OPERATION_WAIT_PERIOD_MS || '1000',
+        NODE_OPTIONS: [process.env.NODE_OPTIONS, MASSA_OPERATION_PATCH ? `--require ${MASSA_OPERATION_PATCH}` : ''].filter(Boolean).join(' '),
+        ...env,
+      },
       timeout: 600_000, // 10 min max
     })
 
@@ -41,6 +63,8 @@ function runDewebCli(args: string[], env: NodeJS.ProcessEnv): Promise<string> {
       } else {
         const msg = stderr.includes('insufficient funds')
           ? 'Platform wallet has insufficient MAS. Please contact support.'
+          : stderr.includes('Operation not found')
+          ? 'Massa could not confirm the deployment operation after submission. This is usually a network/RPC confirmation issue. Please retry in a few minutes; if it keeps happening, contact support.'
           : stderr.includes('already exists')
           ? 'A site with this address already exists.'
           : `Upload failed: ${stderr.slice(0, 300)}`
@@ -76,6 +100,50 @@ async function ensureSpaFallback(dirPath: string) {
   }
 }
 
+async function injectMassaBadgeHiderIntoDirectory(dirPath: string) {
+  const entries = await fs.readdir(dirPath, { withFileTypes: true })
+  await Promise.all(entries.map(async entry => {
+    const entryPath = path.join(dirPath, entry.name)
+    if (entry.isDirectory()) {
+      if (entry.name === 'node_modules' || entry.name.startsWith('.')) return
+      await injectMassaBadgeHiderIntoDirectory(entryPath)
+      return
+    }
+    if (!entry.isFile() || !entry.name.toLowerCase().endsWith('.html')) return
+    const html = await fs.readFile(entryPath, 'utf-8')
+    const next = hideMassaBadge(html)
+    if (next !== html) await fs.writeFile(entryPath, next, 'utf-8')
+  }))
+}
+
+const PRUNED_UPLOAD_DIRS = new Set([
+  'node_modules',
+  '.git',
+  '.cache',
+  '.turbo',
+  '.next',
+  '.nuxt',
+])
+
+async function pruneUploadDirectory(dirPath: string) {
+  const entries = await fs.readdir(dirPath, { withFileTypes: true })
+  await Promise.all(entries.map(async entry => {
+    const entryPath = path.join(dirPath, entry.name)
+    if (entry.isDirectory()) {
+      if (PRUNED_UPLOAD_DIRS.has(entry.name)) {
+        await fs.rm(entryPath, { recursive: true, force: true })
+        return
+      }
+      await pruneUploadDirectory(entryPath)
+      return
+    }
+    if (!entry.isFile()) return
+    if (entry.name.endsWith('.map')) {
+      await fs.rm(entryPath, { force: true })
+    }
+  }))
+}
+
 export async function uploadDirectory(
   dirPath: string,
   title: string,
@@ -95,6 +163,8 @@ export async function uploadDirectory(
   }
   await fs.writeFile(path.join(dirPath, 'website.json'), JSON.stringify(config), 'utf-8')
   await ensureSpaFallback(dirPath)
+  await pruneUploadDirectory(dirPath)
+  await injectMassaBadgeHiderIntoDirectory(dirPath)
 
   onProgress?.('Uploading to Massa chain...')
 
@@ -117,7 +187,7 @@ export async function uploadSite(
 
   try {
     onProgress?.('Writing site files...')
-    await fs.writeFile(path.join(tmpDir, 'index.html'), html, 'utf-8')
+    await fs.writeFile(path.join(tmpDir, 'index.html'), hideMassaBadge(html), 'utf-8')
 
     // Write metadata config
     const config = {
