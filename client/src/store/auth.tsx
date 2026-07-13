@@ -2,6 +2,18 @@ import { create } from 'zustand'
 import { User } from '../types'
 import { auth as authApi } from '../api'
 
+const AUTH_MARKER_KEY = 'ctrlpoint_has_auth'
+
+function hasAuthMarker() {
+  return typeof window !== 'undefined' && window.localStorage.getItem(AUTH_MARKER_KEY) === 'true'
+}
+
+function setAuthMarker(value: boolean) {
+  if (typeof window === 'undefined') return
+  if (value) window.localStorage.setItem(AUTH_MARKER_KEY, 'true')
+  else window.localStorage.removeItem(AUTH_MARKER_KEY)
+}
+
 interface AuthStore {
   user: User | null
   loading: boolean
@@ -17,28 +29,40 @@ export const useAuth = create<AuthStore>((set) => ({
   loading: true,
 
   init: async () => {
+    if (!hasAuthMarker()) {
+      set({ user: null, loading: false })
+      return
+    }
+
     try {
       const { user } = await authApi.me()
       set({ user, loading: false })
     } catch {
+      setAuthMarker(false)
       set({ user: null, loading: false })
     }
   },
 
   login: async (email, password) => {
     const { user } = await authApi.login(email, password)
+    setAuthMarker(true)
     set({ user })
   },
 
   register: async (email, password, massaAddress) => {
     const { user } = await authApi.register(email, password, massaAddress)
+    setAuthMarker(true)
     set({ user })
   },
 
   logout: async () => {
-    await authApi.logout()
+    await authApi.logout().catch(() => null)
+    setAuthMarker(false)
     set({ user: null })
   },
 
-  setUser: (user) => set({ user }),
+  setUser: (user) => {
+    setAuthMarker(true)
+    set({ user })
+  },
 }))

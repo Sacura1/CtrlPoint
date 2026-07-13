@@ -31,8 +31,8 @@ let running = false
 let timer: NodeJS.Timeout | null = null
 let consecutiveFailures = 0
 
-function schedule(delay = 2500) {
-  if (!started) return
+function schedule(delay: number | null = 2500) {
+  if (!started || delay === null) return
   if (timer) clearTimeout(timer)
   timer = setTimeout(async () => {
     timer = null
@@ -351,7 +351,7 @@ async function recoverStaleBuilds() {
   })
 }
 
-async function tick() {
+async function tick(): Promise<number | null> {
   if (running) return ACTIVE_POLL_MS
   running = true
   try {
@@ -361,7 +361,7 @@ async function tick() {
       orderBy: { updatedAt: 'asc' },
       include: { site: true },
     })
-    if (!queued) return IDLE_SAFETY_POLL_MS
+    if (!queued) return cfg.arcBuildWorkerIdlePollEnabled ? IDLE_SAFETY_POLL_MS : null
     const statusBeforeClaim = queued.status
     const claimed = await db.arcDapp.updateMany({
       where: { id: queued.id, status: statusBeforeClaim },
@@ -391,7 +391,7 @@ export function startArcBuildWorker() {
   if (started) return
   started = true
   console.log('[arc-worker] build worker started')
-  // Recover queued/interrupted work once on boot. New jobs wake the worker
-  // directly, so the database can remain suspended while the queue is idle.
-  schedule(1000)
+  // In low-cost idle mode, new Arc build requests wake this worker directly.
+  // Boot recovery can be re-enabled for marketing/high-traffic periods.
+  if (cfg.arcBuildWorkerRecoverOnBoot) schedule(1000)
 }

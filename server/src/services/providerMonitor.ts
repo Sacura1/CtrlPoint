@@ -65,7 +65,7 @@ export async function checkProviderHealth(): Promise<ProviderHealth> {
 }
 
 export function startProviderMonitor() {
-  if (started) return
+  if (started || !cfg.enableProviderMonitor) return
   started = true
   checkProviderHealth().catch(() => {})
   setInterval(() => {

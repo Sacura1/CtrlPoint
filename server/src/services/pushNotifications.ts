@@ -1,4 +1,5 @@
 import prisma from '../lib/prisma'
+import { cfg } from '../config'
 
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send'
 const REMINDER_AFTER_MS = 2 * 24 * 60 * 60 * 1000
@@ -118,11 +119,11 @@ let reminderStarted = false
 let reminderTimer: NodeJS.Timeout | null = null
 
 export function startPushReminderWorker() {
-  if (reminderStarted) return
+  if (reminderStarted || !cfg.enablePushReminderWorker) return
   reminderStarted = true
   const tick = async () => {
     await sendDueBuildReminders().catch((err) => console.error('[push] reminder failed:', err))
-    reminderTimer = setTimeout(tick, 60 * 60 * 1000)
+    reminderTimer = setTimeout(tick, Math.max(60_000, cfg.pushReminderPollMs))
   }
-  reminderTimer = setTimeout(tick, 10 * 60 * 1000)
+  reminderTimer = setTimeout(tick, Math.max(60_000, cfg.pushReminderInitialDelayMs))
 }

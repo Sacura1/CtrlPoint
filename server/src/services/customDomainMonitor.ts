@@ -51,17 +51,17 @@ export async function checkCustomDomainsOnce(): Promise<number> {
   }
 }
 
-function scheduleNext(delayMs: number) {
-  if (!started) return
+function scheduleNext(delayMs: number | null) {
+  if (!started || delayMs === null) return
   if (timer) clearTimeout(timer)
   timer = setTimeout(async () => {
     timer = null
     try {
       const checked = await checkCustomDomainsOnce()
-      scheduleNext(checked > 0 ? cfg.customDomainMonitorPollMs : cfg.customDomainMonitorIdlePollMs)
+      scheduleNext(checked > 0 ? cfg.customDomainMonitorPollMs : (cfg.customDomainMonitorIdlePollEnabled ? cfg.customDomainMonitorIdlePollMs : null))
     } catch (err: any) {
       console.warn('[custom-domain-monitor] tick failed:', err?.message || err)
-      scheduleNext(cfg.customDomainMonitorIdlePollMs)
+      scheduleNext(cfg.customDomainMonitorIdlePollEnabled ? cfg.customDomainMonitorIdlePollMs : null)
     }
   }, Math.max(30_000, delayMs))
 }
@@ -73,5 +73,5 @@ export function wakeCustomDomainMonitor() {
 export function startCustomDomainMonitor() {
   if (started) return
   started = true
-  scheduleNext(cfg.customDomainMonitorIdlePollMs)
+  scheduleNext(cfg.customDomainMonitorIdlePollEnabled ? cfg.customDomainMonitorIdlePollMs : null)
 }

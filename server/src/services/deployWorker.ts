@@ -186,8 +186,8 @@ async function processDeployment(deployment: DeploymentWithSite) {
   }
 }
 
-function scheduleTick(delayMs: number) {
-  if (!started || !cfg.enableDeployWorker) return
+function scheduleTick(delayMs: number | null) {
+  if (!started || !cfg.enableDeployWorker || delayMs === null) return
   if (wakeTimer) clearTimeout(wakeTimer)
   wakeTimer = setTimeout(() => {
     wakeTimer = null
@@ -253,15 +253,19 @@ async function tick() {
     tickRunning = false
     const activeJobs = activeStatic + activeFramework
     const likelyMoreQueued = queuedCount > startedJobs
-    scheduleTick(activeJobs > 0 || likelyMoreQueued ? cfg.deployWorkerPollMs : cfg.deployWorkerIdlePollMs)
+    if (activeJobs > 0 || likelyMoreQueued) {
+      scheduleTick(cfg.deployWorkerPollMs)
+    } else {
+      scheduleTick(cfg.deployWorkerIdlePollEnabled ? cfg.deployWorkerIdlePollMs : null)
+    }
   }
 }
 
 export function startDeployWorker() {
   if (started || !cfg.enableDeployWorker) return
   started = true
-  console.log(`[worker] deploy worker started: static=${cfg.deployWorkerStaticConcurrency}, framework=${cfg.deployWorkerFrameworkConcurrency}, idlePollMs=${cfg.deployWorkerIdlePollMs}`)
-  // Recover queued work on boot. New deployment requests wake this worker
-  // directly, so the idle safety poll does not keep serverless Postgres awake.
-  scheduleTick(1000)
+  console.log(`[worker] deploy worker started: static=${cfg.deployWorkerStaticConcurrency}, framework=${cfg.deployWorkerFrameworkConcurrency}, idlePollMs=${cfg.deployWorkerIdlePollEnabled ? cfg.deployWorkerIdlePollMs : 'disabled'}`)
+  // In low-cost idle mode, new deployment requests wake this worker directly.
+  // Boot recovery can be re-enabled for marketing/high-traffic periods.
+  if (cfg.deployWorkerRecoverOnBoot) scheduleTick(1000)
 }

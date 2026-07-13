@@ -33,9 +33,17 @@ function uniqueOrigins(origins: string[]): string[] {
   })
 }
 
+
+
 function parseCsv(raw: string | undefined): string[] {
   if (!raw) return []
   return raw.split(',').map(v => v.trim()).filter(Boolean)
+}
+
+function parseBooleanEnv(name: string, fallback: boolean): boolean {
+  const value = process.env[name]
+  if (value === undefined) return fallback
+  return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase())
 }
 
 const explicitClientUrl = process.env.CLIENT_URL ? normalizeOrigin(process.env.CLIENT_URL) : ''
@@ -47,6 +55,8 @@ const allowedOrigins = uniqueOrigins([
 ])
 const mnsPublicDomain = normalizeHost(process.env.MNS_PUBLIC_DOMAIN || 'massahub.network')
 const adminEmails = parseCsv(process.env.ADMIN_EMAILS).map(email => email.toLowerCase())
+
+const idleCostMode = parseBooleanEnv('IDLE_COST_MODE', process.env.NODE_ENV === 'production')
 
 export const cfg = {
   port: parseInt(process.env.PORT || (process.env.NODE_ENV === 'production' ? '8000' : '3001')),
@@ -113,6 +123,8 @@ export const cfg = {
   adminAlertWebhookUrl: process.env.ADMIN_ALERT_WEBHOOK_URL || '',
   nodeEnv: process.env.NODE_ENV || 'development',
 
+  idleCostMode,
+
   arc: {
     rpcUrl: process.env.ARC_RPC_URL || 'https://rpc.testnet.arc.network',
     chainId: parseInt(process.env.ARC_CHAIN_ID || '5042002'),
@@ -140,11 +152,20 @@ export const cfg = {
   // Feature flags
   enableModelSelection: process.env.ENABLE_MODEL_SELECTION === 'true',
   enableArcBuilder: process.env.ENABLE_ARC_BUILDER === 'true',
+  enableProviderMonitor: parseBooleanEnv('ENABLE_PROVIDER_MONITOR', !idleCostMode),
+  enablePushReminderWorker: parseBooleanEnv('ENABLE_PUSH_REMINDER_WORKER', !idleCostMode),
+  pushReminderInitialDelayMs: parseInt(process.env.PUSH_REMINDER_INITIAL_DELAY_MS || '600000'),
+  pushReminderPollMs: parseInt(process.env.PUSH_REMINDER_POLL_MS || '3600000'),
   enableDeployWorker: process.env.ENABLE_DEPLOY_WORKER !== 'false',
+  deployWorkerRecoverOnBoot: parseBooleanEnv('DEPLOY_WORKER_RECOVER_ON_BOOT', !idleCostMode),
+  deployWorkerIdlePollEnabled: parseBooleanEnv('DEPLOY_WORKER_IDLE_POLL_ENABLED', !idleCostMode),
   deployWorkerPollMs: parseInt(process.env.DEPLOY_WORKER_POLL_MS || '3000'),
   deployWorkerIdlePollMs: parseInt(process.env.DEPLOY_WORKER_IDLE_POLL_MS || '86400000'),
   deployWorkerStaticConcurrency: parseInt(process.env.DEPLOY_WORKER_STATIC_CONCURRENCY || '3'),
   deployWorkerFrameworkConcurrency: parseInt(process.env.DEPLOY_WORKER_FRAMEWORK_CONCURRENCY || '1'),
+  customDomainMonitorIdlePollEnabled: parseBooleanEnv('CUSTOM_DOMAIN_MONITOR_IDLE_POLL_ENABLED', !idleCostMode),
+  arcBuildWorkerRecoverOnBoot: parseBooleanEnv('ARC_BUILD_WORKER_RECOVER_ON_BOOT', !idleCostMode),
+  arcBuildWorkerIdlePollEnabled: parseBooleanEnv('ARC_BUILD_WORKER_IDLE_POLL_ENABLED', !idleCostMode),
 
   // Circle Gateway / x402 payments for agent-facing deploy endpoints
   circleX402Enabled: process.env.CIRCLE_X402_ENABLED === 'true',
